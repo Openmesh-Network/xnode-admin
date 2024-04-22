@@ -17,7 +17,15 @@ This admin service will have the following loops:
 * quick pull txt record as bloom filter record from powerdns 
     * when it receives the correct uuid as a bloom filter it will trigger an instant git pull from the configured remote
 
-## Configuration
-* Interval
-* Git remote url
-* Powerdns url (LATER)
+## Usage
+` xnode-rebuilder GIT_LOCATION GIT_REMOTE SEARCH_INTERVAL [GPG_KEY] [POWERDNS_URL] `
+
+`GIT_LOCATION` is the local directory where the git folder should be cloned. Ensure that your configuration.nix imports this.
+
+`GIT_REMOTE` is the remote location to pull configuration updates from.
+
+`SEARCH_INTERVAL` is the interval between git pulls measured in seconds (s).
+
+`GPG_KEY` (optional) path to the gpg public key.
+
+`POWERDNS_URL` (optional) is for scalability, it is a way to receive TXT records that trigger immediate pull from git.
