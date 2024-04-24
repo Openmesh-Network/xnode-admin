@@ -29,3 +29,6 @@ This admin service will have the following loops:
 `GPG_KEY` (optional) path to the gpg public key.
 
 `POWERDNS_URL` (optional) is for scalability, it is a way to receive TXT records that trigger immediate pull from git.
+
+## Important note about security
+If there are unsigned commits to the source repository for example if it is compromised or there is a malfunction, then the Xnode will not pull those commits due to a git command error exception. It will however pull the next signed commit, so Xnode Studio should handle notifying the user of untracked / unsigned commits and merging or dropping them.
