@@ -43,8 +43,8 @@ def parse_args():
 
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
-    local_repo_path, remote_repo_path, search_interval, user_key, use_ssh, powerdns_url = parse_args() # powerdns_url not implemented
-    
+    local_repo_path, remote_repo_path, search_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
+
     # If there is no git repository at the local path, clone it.
     if not os.path.exists(local_repo_path):
         try:
@@ -53,22 +53,11 @@ def main():
             print("Failed to clone repository: ", remote_repo_path, "Error:", e)
 
     # Initialise interval and git.Repo object
-    last_checked = time.time() - search_interval # Initialise with the current time - search interval to immediately search.
+    last_checked = time.time() - search_interval # Eligible to search immediately on startup
     repo = git.Repo(local_repo_path)
 
-    # If applicable, add the key to the repo for commit verification
-    if user_key is not None:
-        if use_ssh:
-            try:
-                config_parser = repo.config_writer()
-                config_parser.set_value("gpg", "format", "ssh")
-                config_parser.set_value('gpg "ssh"',"allowedSignersFile", user_key) # Expected as a path to read from
-                #config_parser.set_value("user", "signingkey", user_key)
-                print("Using SSH key")
-            except git.GitCommandError:
-                print("Failed to set SSH key", git.GitCommandNotFound)
-        elif use_ssh is False: # To-Do: GPG 
-            pass
+    # If applicable, add the key to the repo's git config for commit verification
+    configure_keys(user_key, use_ssh, repo)
     git_bin = repo.git
 
     # Loop forever, pulling changes from git.
@@ -92,8 +81,9 @@ def main():
                         # This will print the verification result for each commit
                         try:
                             verification_output = git_bin.verify_commit(remote_commit.hexsha)                      
-                            repo.remotes.origin.pull(remote_commit)
+                            repo.remotes.origin.pull(remote_commit.hexsha)
                             print("Commit was verified and pulled.", verification_output)
+                            rebuild_nixos()
 
                         except git.GitCommandError as e:
                             print(verification_output)
@@ -108,15 +98,35 @@ def main():
                         except git.GitCommandError as e:
                             print(e)
                             print("Failed to verify commit:", repo.head.commit)
+        # Fetch from origin
+        last_checked = time.time()             
+        # merge with fast forward
 
-
-            # Fetch from origin
-            last_checked = time.time()             
-            # merge with fast forward
+def configure_keys(user_key, use_ssh, repo):
+    if user_key is not None:
+        if use_ssh:
+            try:
+                with repo.config_writer() as config:
+                    config.set_value("gpg", "format", "ssh")
+                    config.set_value('gpg "ssh"',"allowedSignersFile", user_key) # Path to 'keyfile' (similar to an authorized_hosts)
+                    config.release()
+            except git.GitCommandError:
+                print("Failed to set SSH key", git.GitCommandNotFound)
+        elif use_ssh is False:
+            try:
+                with repo.config_writer() as config: # To-do: Implement GPG
+                    config.set_value("gpg", "format", "") # UPDATE
+                    config.set_value("user","signingKey", user_key) # Hex of gpg public key
+                    config.release()
+            except git.GitCommandError:
+                print("Failed to set SSH key", git.GitCommandNotFound)
+        else: # When use_ssh is None
+            pass
         
-        # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
-        # To-Do: Rebuild NixOS function for error logging
-        os.system("nixos-rebuild switch --flake .#xnode") # Rebuild NixOS
+def rebuild_nixos():
+    # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
+    # To-Do: Rebuild NixOS function for error logging
+    os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
 if __name__ == "__main__":
     main()
