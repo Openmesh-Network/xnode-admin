@@ -17,6 +17,11 @@ This admin service will have the following loops:
 * quick pull txt record as bloom filter record from powerdns 
     * when it receives the correct uuid as a bloom filter it will trigger an instant git pull from the configured remote
 
+## Progress / To-Do
+* Integration with Isomorphic git on the front-end
+* Wallet Connect signature and verification.
+    * Determine whether we should convert to GPG/SSH format or use a custom verify-commit function.
+
 ## Usage
 ` xnode-rebuilder GIT_LOCATION GIT_REMOTE SEARCH_INTERVAL [GPG_KEY] [POWERDNS_URL] `
 
