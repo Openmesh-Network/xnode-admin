@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name='Xnode-Admin'
+version='0.0.0'
 description='Agent service for Xnode'
 urls.source='https://github.com/Openmesh-Network/xnode-admin'
 dependencies = ["gitpython"]
