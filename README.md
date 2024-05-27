@@ -21,6 +21,7 @@ This admin service will have the following loops:
 * Integration with Isomorphic git on the front-end
 * Wallet Connect signature and verification.
     * Determine whether we should convert to GPG/SSH format or use a custom verify-commit function.
+* Refactor with a class to tidy up the main function.
 
 ## Usage
 ` xnode-rebuilder GIT_LOCATION GIT_REMOTE SEARCH_INTERVAL [GPG_KEY] [POWERDNS_URL] `
