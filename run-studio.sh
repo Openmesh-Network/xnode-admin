@@ -1,0 +1,1 @@
+python src/xnode-admin/nix_rebuilder.py xnode https://xnode.openmesh.network 0 1c02e8509a1b20ab10adf

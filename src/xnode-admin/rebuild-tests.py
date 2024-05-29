@@ -1,0 +1,1 @@
+# Emulates connection to the studio

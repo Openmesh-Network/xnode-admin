@@ -4,6 +4,7 @@ import git
 import os
 import time
 import sys
+import psutil
 
 def parse_args():
     # Simple function to pass in arguments from the command line, argument order is important.
@@ -38,19 +39,21 @@ def parse_args():
     else:
         powerdns_url = ""
 
-    return args[0], args[1], int(args[2]), user_key, use_ssh, powerdns_url
+    # Studio mode override
+    if args[2] == 0:
+        user_key = args[3] # Set the preshared secret using a nix option
 
+    return args[0], args[1], int(args[2]), user_key, use_ssh, powerdns_url
 
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
-    local_repo_path, remote_repo_path, search_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
+    local_repo_path, remote_repo_path, fetch_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
 
-    # Hack to use Xnode Studio API rather than git (for short deadline)
-    if search_interval == 0:
+    # Hack to use Xnode Studio API rather than a git remote
+    if fetch_interval == 0: # Studio uses a hardcoded interval
         print("Running in Studio mode.")
-        # Remote repo = Studio's backend url, whitelisted as only accepted connection
-        # Logic for Studio API here...
-        HandleStudioAPI()
+        # Remote repo is the studio's URL and User key is a preshared secret.
+        fetch_config_studio(remote_repo_path, user_key)
     else:
         # If there is no git repository at the local path, clone it.
         if not os.path.exists(local_repo_path):
@@ -60,7 +63,7 @@ def main():
                 print("Failed to clone repository: ", remote_repo_path, "Error:", e)
 
         # Initialise interval and git.Repo object
-        last_checked = time.time() - search_interval # Eligible to search immediately on startup
+        last_checked = time.time() - fetch_interval # Eligible to search immediately on startup
         repo = git.Repo(local_repo_path)
 
         # If applicable, add the key to the repo's git config for commit verification
@@ -70,7 +73,7 @@ def main():
         # Loop forever, pulling changes from git.
         while True:
             # If the interval has passed since the last check then fetch the latest head.
-            if last_checked + search_interval < time.time():
+            if last_checked + fetch_interval < time.time():
                 fetch_info = repo.remotes.origin.fetch()
                 for fetch in fetch_info:
                     print("Fetched from:", fetch.name)
@@ -105,9 +108,7 @@ def main():
                             except git.GitCommandError as e:
                                 print(e)
                                 print("Failed to verify commit:", repo.head.commit)
-            # Fetch from origin
-            last_checked = time.time()             
-            # merge with fast forward
+            last_checked = time.time()
 
 def configure_keys(user_key, use_ssh, repo):
     if user_key is not None:
@@ -135,9 +136,51 @@ def rebuild_nixos():
     # To-Do: Rebuild NixOS function for error logging
     os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
-def HandleStudioAPI():
+def fetch_config_studio(studio_url, preshared_secret):
     # Talks to the dpl backend to configure the xnode directly.
-    # Can directly modify nix configuration files if we need to.
+    
+    hearbeat_interval = 15 # Heartbeat interval in seconds
+    last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
+    cpu_usage_list = []
+    mem_usage_list = []
+
+    # Loop forever, pulling changes from Xnode Studio.
+    while True:
+        # Collect metrics
+        cpu_usage_list.append(psutil.cpu_percent())
+        mem_usage_list.append(psutil.virtual_memory().percent)
+
+        # If the interval has passed since the last check then fetch from the studio.
+        if last_checked + hearbeat_interval < time.time():
+            # Calculate metrics (average and maximum)
+            total = 0
+            highest_cpu_usage = 0
+            for i in cpu_usage_list:
+                if i > highest_cpu_usage:
+                    highest_cpu_usage = i
+                total += i
+            avg_cpu_usage = total / len(cpu_usage_list)
+
+            total = 0
+            highest_mem_usage = 0
+            for i in mem_usage_list:
+                if i > highest_mem_usage:
+                    highest_mem_usage = i
+                total += i
+                avg_mem_usage = total / len(mem_usage_list)
+
+            # Submit heartbeat with metrics, reconfigure if required.
+            print(highest_cpu_usage, avg_cpu_usage)
+            print(highest_mem_usage, avg_mem_usage)
+
+            # Reset last_checked and empty the lists
+            cpu_usage_list = []
+            mem_usage_list = []
+            last_checked = time.time()      
+        time.sleep(1)
+    
+def fetch_config_git():
+    # To-do: Modularise the main function for readability
     pass
 
 if __name__ == "__main__":
