@@ -17,6 +17,9 @@ This admin service will have the following loops:
 * quick pull txt record as bloom filter record from powerdns 
     * when it receives the correct uuid as a bloom filter it will trigger an instant git pull from the configured remote
 
+## Studio Mode
+The initial release version of this software will communicate directly with the Studio via an API, building it's configuration from a JSON response.
+
 ## Progress / To-Do
 * Integration with Isomorphic git on the front-end
 * Wallet Connect signature and verification.

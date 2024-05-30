@@ -5,6 +5,9 @@ import os
 import time
 import sys
 import psutil
+from pathlib import Path
+import requests
+import json
 
 def parse_args():
     # Simple function to pass in arguments from the command line, argument order is important.
@@ -53,7 +56,7 @@ def main():
     if fetch_interval == 0: # Studio uses a hardcoded interval
         print("Running in Studio mode.")
         # Remote repo is the studio's URL and User key is a preshared secret.
-        fetch_config_studio(remote_repo_path, user_key)
+        fetch_config_studio(remote_repo_path, user_key, local_repo_path)
     else:
         # If there is no git repository at the local path, clone it.
         if not os.path.exists(local_repo_path):
@@ -136,15 +139,20 @@ def rebuild_nixos():
     # To-Do: Rebuild NixOS function for error logging
     os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
-def fetch_config_studio(studio_url, preshared_secret):
+def fetch_config_studio(studio_url, preshared_secret, config_location):
     # Talks to the dpl backend to configure the xnode directly.
     
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
+    latest_config_location = Path(config_location) # Hardcoded, should be local_repo
+    if not latest_config_location.is_file():
+        # Create an empty json file so that the rest of the code can assume it is there.
+        pass
 
-    # Loop forever, pulling changes from Xnode Studio.
+
+    # Loop forever, pulling changes from Xnode Studio and collecting metrics to send.
     while True:
         # Collect metrics
         cpu_usage_list.append(psutil.cpu_percent())
@@ -170,15 +178,59 @@ def fetch_config_studio(studio_url, preshared_secret):
                 avg_mem_usage = total / len(mem_usage_list)
 
             # Submit heartbeat with metrics, reconfigure if required.
-            print(highest_cpu_usage, avg_cpu_usage)
-            print(highest_mem_usage, avg_mem_usage)
+            print("Maximum CPU", highest_cpu_usage, "Average CPU", avg_cpu_usage)
+            print("Maximum MEM:", highest_mem_usage, "Average MEM:", avg_mem_usage)
+
+            # To-Do: Send metrics to Xnode Studio
+            #requests.post(studio_url, json={"cpu": avg_cpu_usage, "mem": avg_mem_usage}) # Borked
+
+            config_response = requests.get(studio_url) # Should use preshared_secret
+            latest_config = json.loads(config_response.text)
+            config_updated = process_config(latest_config, latest_config_location)
+
+            if config_updated:
+                # Rebuild NixOS
+                pass
 
             # Reset last_checked and empty the lists
             cpu_usage_list = []
             mem_usage_list = []
             last_checked = time.time()      
-        time.sleep(1)
-    
+
+        precision = 1 # (seconds) Increase to trade performance for metric precision
+        time.sleep(precision) 
+
+def process_config(raw_json_studio, xnode_nix_path):
+    # 1 Check if config has changed
+    # To-Do: Implement config diff
+    if False:
+        return False
+
+    new_sys_config = "{\n"
+    # 2 Update config by reconstructing configuration
+    for module in raw_json_studio:
+        module_config = "services." + str(module["nixName"]) + " = {\n  enable = true;"
+        for option in module["options"]:
+            module_config += str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
+        new_sys_config += module_config + "};\n}"
+    print(new_sys_config)
+    # Write the new config to the .nix file
+    with open(xnode_nix_path, "w") as f:
+        f.write(new_sys_config)
+    return True
+
+def parse_nix_primitive(type, value):
+    if type == "int":
+        return value
+    elif type == "float":
+        return float(value)
+    elif type.startswith("/") or type.startswith("./"):
+        return value
+    elif type == "string":
+        return '"' + value + '"'
+    else:
+        return value
+
 def fetch_config_git():
     # To-do: Modularise the main function for readability
     pass

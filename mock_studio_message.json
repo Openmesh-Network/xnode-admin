@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Minecraft",
+    "desc": "Server for Minecraft java edition",
+    "logo": "<URL to image>",
+    "tags": [ "Game", "Server"],
+    "specs": {
+      "ram": 1024,
+      "storage": 1024
+    },
+    "nixName": "minecraft-server-java",
+    "options": [
+      {
+        "name": "Maximum players",
+        "desc": "How many people can play total.",
+        "nixName": "maxplay",
+        "type": "int",
+        "value": "1000"
+      },
+      {
+        "name": "Maximum players",
+        "desc": "How many people can play total.",
+        "nixName": "maxplay",
+        "type": "int",
+        "value": "1000"
+      },
+      {
+        "name": "Port",
+        "desc": "Server port.",
+        "nixName": "serverProperties.port",
+        "type": "settings",
+        "value": "100"
+      }
+
+    ]
+  },
+  {
+    "name": "Grafana",
+    "desc": "Tool to use view usage",
+    "logo": "<URL to image>",
+    "tags": [ "Observability", "Tool"],
+    "source": "openmesh",
+    "specs": {
+      "ram": 256,
+      "storage": 200
+    },
+    "nixName": "grafana",
+    "options": [
+      {
+        "name": "Port",
+        "desc": "Port where the server is exposed publically",
+        "nixName": "port",
+        "type": "int",
+        "value": "1000"
+      }
+    ]
+  }
+]
