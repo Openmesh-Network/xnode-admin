@@ -75,8 +75,8 @@ def main():
     if uuid == '' or accessToken == '':
         print("Couldn't find in /proc/cmdline")
 
-        uuid = "bd725212-589c-4cdf-b349-969152757916"
-        accessToken = "UZhnqFgtI0YNm4XF080LfgYdoaZZsNMzICY4TFwdeJXdf3cSKgMYi6SQiNvx32QS"
+        uuid = "f19bee91-f7ab-40d8-ad9b-558d258fa1fd"
+        accessToken = "rL8LoaEtv35vk3kkAZxoHQI2Y4AqoZPgZdcm5wr375vFWzkam12RWNtkO3vPW4MF"
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
@@ -241,7 +241,7 @@ def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
 
                 if config_updated:
                     # TODO: Rebuild NixOS
-                    pass
+                    rebuild_nixos()
             else:
                 print('Request failed, status: ', config_response.status_code)
                 print(config_response.content)
