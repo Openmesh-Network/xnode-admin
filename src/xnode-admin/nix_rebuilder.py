@@ -59,8 +59,24 @@ def main():
     local_repo_path, remote_repo_path, fetch_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
 
     # TODO: Parse IPXE variables here instead or something.
-    uuid = "bd725212-589c-4cdf-b349-969152757916"
-    accessToken = "UZhnqFgtI0YNm4XF080LfgYdoaZZsNMzICY4TFwdeJXdf3cSKgMYi6SQiNvx32QS"
+
+    uuid = ''
+    accessToken = ''
+    f = open('/proc/cmdline', 'r')
+    vars = f.read().split(' ')
+    f.close()
+
+    for v in vars:
+        if 'uuid=' in v:
+            uuid = v.split('=')[1]
+        elif 'accessToken=' in v:
+            accessToken = v.split('=')[1]
+
+    if uuid == '' or accessToken == '':
+        print("Couldn't find in /proc/cmdline")
+
+        uuid = "bd725212-589c-4cdf-b349-969152757916"
+        accessToken = "UZhnqFgtI0YNm4XF080LfgYdoaZZsNMzICY4TFwdeJXdf3cSKgMYi6SQiNvx32QS"
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
