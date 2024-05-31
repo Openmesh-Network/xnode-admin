@@ -67,9 +67,9 @@ def main():
     f.close()
 
     for v in vars:
-        if 'uuid=' in v:
+        if 'XNODE_UUID=' in v:
             uuid = v.split('=')[1]
-        elif 'accessToken=' in v:
+        elif 'XNODE_ACCESS_TOKEN=' in v:
             accessToken = v.split('=')[1]
 
     if uuid == '' or accessToken == '':
