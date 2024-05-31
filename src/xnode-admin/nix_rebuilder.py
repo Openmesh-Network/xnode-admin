@@ -9,6 +9,11 @@ from pathlib import Path
 import requests
 import json
 
+
+# NOTE: Not secret, just used to prevent blind spam.
+DPL_BACKEND_APP_KEY='as90qw90uj3j9201fj90fj90dwinmfwei98f98ew0-o0c1m221dds222143'
+
+
 def parse_args():
     # Simple function to pass in arguments from the command line, argument order is important.
     opts = [opt for opt in sys.argv[1:] if opt.startswith("-")]
@@ -50,13 +55,18 @@ def parse_args():
 
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
+
     local_repo_path, remote_repo_path, fetch_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
+
+    # TODO: Parse IPXE variables here instead or something.
+    uuid = "bd725212-589c-4cdf-b349-969152757916"
+    accessToken = "UZhnqFgtI0YNm4XF080LfgYdoaZZsNMzICY4TFwdeJXdf3cSKgMYi6SQiNvx32QS"
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
         print("Running in Studio mode.")
         # Remote repo is the studio's URL and User key is a preshared secret.
-        fetch_config_studio(remote_repo_path, user_key, local_repo_path)
+        fetch_config_studio(remote_repo_path, uuid, accessToken, local_repo_path)
     else:
         # If there is no git repository at the local path, clone it.
         if not os.path.exists(local_repo_path):
@@ -93,7 +103,7 @@ def main():
 
                             # This will print the verification result for each commit
                             try:
-                                verification_output = git_bin.verify_commit(remote_commit.hexsha)                      
+                                verification_output = git_bin.verify_commit(remote_commit.hexsha)
                                 repo.remotes.origin.pull(remote_commit.hexsha)
                                 print("Commit was verified and pulled.", verification_output)
                                 rebuild_nixos()
@@ -102,7 +112,6 @@ def main():
                                 print(verification_output)
                                 print(e)
                                 print("Failed to verify commit:", remote_commit)
-                                    
                         else:
                             print("Local master is up to date with the remote master.")
                             try:
@@ -133,15 +142,14 @@ def configure_keys(user_key, use_ssh, repo):
                 print("Failed to set SSH key", git.GitCommandNotFound)
         else: # When use_ssh is None
             pass
-        
+
 def rebuild_nixos():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Rebuild NixOS function for error logging
     os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
-def fetch_config_studio(studio_url, preshared_secret, config_location):
+def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
     # Talks to the dpl backend to configure the xnode directly.
-    
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
@@ -151,12 +159,11 @@ def fetch_config_studio(studio_url, preshared_secret, config_location):
         # Create an empty json file so that the rest of the code can assume it is there.
         pass
 
-
     # Loop forever, pulling changes from Xnode Studio and collecting metrics to send.
     while True:
         # Collect metrics
         cpu_usage_list.append(psutil.cpu_percent())
-        mem_usage_list.append(psutil.virtual_memory().percent)
+        mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
 
         # If the interval has passed since the last check then fetch from the studio.
         if last_checked + hearbeat_interval < time.time():
@@ -167,6 +174,7 @@ def fetch_config_studio(studio_url, preshared_secret, config_location):
                 if i > highest_cpu_usage:
                     highest_cpu_usage = i
                 total += i
+
             avg_cpu_usage = total / len(cpu_usage_list)
 
             total = 0
@@ -175,36 +183,68 @@ def fetch_config_studio(studio_url, preshared_secret, config_location):
                 if i > highest_mem_usage:
                     highest_mem_usage = i
                 total += i
-                avg_mem_usage = total / len(mem_usage_list)
+
+            avg_mem_usage = total / len(mem_usage_list)
 
             # Submit heartbeat with metrics, reconfigure if required.
-            print("Maximum CPU", highest_cpu_usage, "Average CPU", avg_cpu_usage)
-            print("Maximum MEM:", highest_mem_usage, "Average MEM:", avg_mem_usage)
 
-            # To-Do: Send metrics to Xnode Studio
-            #requests.post(studio_url, json={"cpu": avg_cpu_usage, "mem": avg_mem_usage}) # Borked
+            # TODO: Send metrics to Xnode Studio
+            disk = psutil.disk_usage('/')
+            message = {
+                "id": str(xnodeId),
+                "cpuPercent": (avg_cpu_usage),
+                "cpuPercentPeek": (highest_cpu_usage),
+                "ramMbUsed": (avg_mem_usage),
+                "ramMbPeek": (highest_mem_usage),
+                "ramMbTotal": (psutil.virtual_memory().total),
 
-            config_response = requests.get(studio_url) # Should use preshared_secret
+                "storageMbUsed":  (disk.used / (1024 * 1024)),
+                "storageMbTotal": (disk.total / (1024 * 1024)),
+            }
+            print(json.dumps(message))
+
+            headers = {
+                'content-type': 'application/json',
+                'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
+                'x-parse-session-token': accessToken,
+            }
+            requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
+
+            message = {
+                "id": str(xnodeId),
+            }
+
+            # TODO: Add an option to check a hash or something to lower bandwidth.
+            print('Fetching update message.')
+            config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
             latest_config = json.loads(config_response.text)
-            config_updated = process_config(latest_config, latest_config_location)
 
-            if config_updated:
-                # Rebuild NixOS
-                pass
+            print(config_response)
+            if config_response.ok:
+                config_updated = process_config(latest_config, latest_config_location)
+
+                if config_updated:
+                    # TODO: Rebuild NixOS
+                    pass
+            else:
+                print('Request failed, status: ', config_response.status_code)
+                print(config_response.content)
 
             # Reset last_checked and empty the lists
             cpu_usage_list = []
             mem_usage_list = []
-            last_checked = time.time()      
+            last_checked = time.time()
 
         precision = 1 # (seconds) Increase to trade performance for metric precision
-        time.sleep(precision) 
+        time.sleep(precision)
 
 def process_config(raw_json_studio, xnode_nix_path):
     # 1 Check if config has changed
     # To-Do: Implement config diff
     if False:
         return False
+
+    # TODO: Check for failure ???
 
     new_sys_config = "{\n"
     # 2 Update config by reconstructing configuration
