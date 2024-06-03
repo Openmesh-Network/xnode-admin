@@ -28,61 +28,41 @@ def parse_args():
         print("If using a USER_KEY please specify -s for SSH or -g for gpg.")
         sys.exit(1)
 
-    # User key options
-    if "-s" in opts:
-        user_key = args[3]
-        use_ssh = True
-        print("Using SSH Public Key at directory: ", user_key)
-    elif "-g" in opts:
-        user_key = args[3]
-        use_ssh = False
-        print("Using PGP Public Key: ", user_key)
-    else:
-        user_key = None
-        use_ssh = None
-    # PowerDns options
-    if "-d" in opts:
-        powerdns_url = args[4]
-        print("Using PowerDNS: ", powerdns_url)
-    else:
-        powerdns_url = ""
+    user_key=None
+    key_type=None
+    userid=None
 
-    # Studio mode override
-    if args[2] == 0:
-        user_key = args[3] # Set the preshared secret using a nix option
+    for o in opts:
+        if o.startswith("--uuid="):
+            userid = o.split('=')[1]
+        if o.startswith("--ssh-dir="):
+            user_key = o.split('=')[1]
+            key_type = "ssh"
+        elif o.startswith("--gpg-key="):
+            user_key = o.split('=')[1]
+            key_type = "gpg"
+        elif o.startswith("--access-token="):
+            user_key = o.split('=')[1]
+            key_type = "access_token"
 
-    return args[0], args[1], int(args[2]), user_key, use_ssh, powerdns_url
+        if o.startswith("--powerdns="):
+            powerdns_url = o.split('=')[1] # Todo
+
+    return args[0], args[1], int(args[2]), user_key, key_type, userid
 
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
 
-    local_repo_path, remote_repo_path, fetch_interval, user_key, use_ssh, _powerdns_url = parse_args() # powerdns_url not implemented yet
+    local_repo_path, remote_repo_path, fetch_interval, user_key, key_type, uuid,  = parse_args() # powerdns_url not implemented yet
 
-    # TODO: Parse IPXE variables here instead or something.
-
-    uuid = ''
-    accessToken = ''
-    f = open('/proc/cmdline', 'r')
-    vars = f.read().split(' ')
-    f.close()
-
-    for v in vars:
-        if 'XNODE_UUID=' in v:
-            uuid = v.split('=')[1]
-        elif 'XNODE_ACCESS_TOKEN=' in v:
-            accessToken = v.split('=')[1]
-
-    if uuid == '' or accessToken == '':
-        print("Couldn't find in /proc/cmdline")
-
-        uuid = "f19bee91-f7ab-40d8-ad9b-558d258fa1fd"
-        accessToken = "rL8LoaEtv35vk3kkAZxoHQI2Y4AqoZPgZdcm5wr375vFWzkam12RWNtkO3vPW4MF"
+    print(user_key, uuid)
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
         print("Running in Studio mode.")
-        # Remote repo is the studio's URL and User key is a preshared secret.
-        fetch_config_studio(remote_repo_path, uuid, accessToken, local_repo_path)
+        if key_type == "access_token":
+            # Remote repo is the studio's URL and User key is a preshared secret.
+            fetch_config_studio(remote_repo_path, uuid, user_key, local_repo_path)
     else:
         # If there is no git repository at the local path, clone it.
         if not os.path.exists(local_repo_path):
@@ -96,7 +76,7 @@ def main():
         repo = git.Repo(local_repo_path)
 
         # If applicable, add the key to the repo's git config for commit verification
-        configure_keys(user_key, use_ssh, repo)
+        configure_keys(user_key, key_type, repo)
         git_bin = repo.git
 
         # Loop forever, pulling changes from git.
@@ -164,7 +144,7 @@ def rebuild_nixos():
     # To-Do: Rebuild NixOS function for error logging
     os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
-def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
+def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
     # Talks to the dpl backend to configure the xnode directly.
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
@@ -207,7 +187,7 @@ def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
             # TODO: Send metrics to Xnode Studio
             disk = psutil.disk_usage('/')
             message = {
-                "id": str(xnodeId),
+                "id": str(xnode_Id),
                 "cpuPercent": (avg_cpu_usage),
                 "cpuPercentPeek": (highest_cpu_usage),
                 "ramMbUsed": (avg_mem_usage),
@@ -217,17 +197,16 @@ def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
-            print(json.dumps(message))
 
             headers = {
                 'content-type': 'application/json',
                 'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
-                'x-parse-session-token': accessToken,
+                'x-parse-session-token': access_token,
             }
             requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
 
             message = {
-                "id": str(xnodeId),
+                "id": str(xnode_Id),
             }
 
             # TODO: Add an option to check a hash or something to lower bandwidth.
@@ -235,7 +214,6 @@ def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
             config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
             latest_config = json.loads(config_response.text)
 
-            print(config_response)
             if config_response.ok:
                 config_updated = process_config(latest_config, latest_config_location)
 
@@ -256,23 +234,31 @@ def fetch_config_studio(studio_url, xnodeId, accessToken, config_location):
 
 def process_config(raw_json_studio, xnode_nix_path):
     # 1 Check if config has changed
-    # To-Do: Implement config diff
-    if False:
-        return False
+    if os.path.isfile("/latest_config.json") == False:
+        with open("./latest_config.json", "w") as f:
+            last_config = "{}"
+            f.write(last_config)
+    else:
+        with open("./latest_config.json", "r") as f:
+            last_config = json.load(f)
 
-    # TODO: Check for failure ???
+    if last_config == raw_json_studio:
+        return False # Same config as last update.
 
-    new_sys_config = "{\n"
-    # 2 Update config by reconstructing configuration
+    # 2 Update config by constructing configuration from the new json
+    new_sys_config = "{"
     for module in raw_json_studio:
-        module_config = "services." + str(module["nixName"]) + " = {\n  enable = true;"
+        module_config = "\n  services." + str(module["nixName"]) + " = {\n    enable = true;\n  "
         for option in module["options"]:
-            module_config += str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
-        new_sys_config += module_config + "};\n}"
+            module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
+        new_sys_config += module_config + "};"
+    new_sys_config += "\n}"
     print(new_sys_config)
     # Write the new config to the .nix file
     with open(xnode_nix_path, "w") as f:
         f.write(new_sys_config)
+    with open("./latest_config.json", "w") as f:
+        f.write(json.dumps(raw_json_studio))
     return True
 
 def parse_nix_primitive(type, value):

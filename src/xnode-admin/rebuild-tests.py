@@ -13,19 +13,19 @@ def read_mock():
     with open("mock_studio_message.json", "r") as f:
         return f.read()
 
-@app.route('/xnode/<uuid>', methods=['GET'])
-def serve_config(uuid):
+@app.route('/xnodes/functions/getXnodeServices', methods=['GET'])
+def serve_config():
     return(read_mock())
 
-@app.route('/xnode/<uuid>/post_metrics', methods=['POST'])
-def post_metrics(uuid):
+@app.route('/xnodes/functions/pushXnodeHeartbeat', methods=['POST'])
+def post_metrics():
     metric_data = json.loads(request.data)
     print(metric_data)
     messages = metric_data # store in memory to return to read_metrics
     return jsonify(messages)
 
 
-@app.route('/read_metrics', methods=['GET']) # Purely for testing, these metrics should be stored by the endpoint.
+@app.route('/xnodes/functions', methods=['GET']) # Purely for testing, these metrics should be stored by the endpoint.
 def read_metrics():
     return jsonify(messages)
 
