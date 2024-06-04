@@ -3,7 +3,7 @@ requires = ["hatchling", "gitpython"]
 build-backend = "hatchling.build"
 
 [project]
-name='Xnode-Admin'
+name='xnode_admin'
 version='0.0.0'
 description='Agent service for Xnode'
 urls.source='https://github.com/Openmesh-Network/xnode-admin'
