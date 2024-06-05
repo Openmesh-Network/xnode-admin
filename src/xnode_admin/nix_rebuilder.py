@@ -44,6 +44,20 @@ def parse_args():
         elif o.startswith("--access-token="):
             user_key = o.split('=')[1]
             key_type = "access_token"
+        
+        if o.startswith("-p"): # Find uuid / psk at /proc/cmdline
+            with open("/proc/cmdline") as file:
+                kvars = file.read.split(" ")
+                for kvar in kvars:
+                    if kvar.startswith("XNODE_UUID="):
+                        userid = kvar.split('=')[1]
+                    if kvar.startswith("XNODE_ACCESS_TOKEN="):
+                        user_key = kvar.split('=')[1]
+                if userid is None or user_key is None:
+                    print("Failed to find XNODE_UUID or XNODE_ACCESS_TOKEN in /proc/cmdline")
+                    sys.exit(1)
+                else:
+                    key_type = "access_token"
 
         if o.startswith("--powerdns="):
             powerdns_url = o.split('=')[1] # Todo
@@ -54,8 +68,6 @@ def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
 
     local_repo_path, remote_repo_path, fetch_interval, user_key, key_type, uuid,  = parse_args() # powerdns_url not implemented yet
-
-    print(user_key, uuid)
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
@@ -234,7 +246,7 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
 
 def process_config(raw_json_studio, xnode_nix_path):
     # 1 Check if config has changed
-    if os.path.isfile("/latest_config.json") == False:
+    if not os.path.isfile("/latest_config.json"):
         with open("./latest_config.json", "w") as f:
             last_config = "{}"
             f.write(last_config)
@@ -246,7 +258,7 @@ def process_config(raw_json_studio, xnode_nix_path):
         return False # Same config as last update.
 
     # 2 Update config by constructing configuration from the new json
-    new_sys_config = "{"
+    new_sys_config = "{ config, pkgs, ... }:\n{"
     for module in raw_json_studio:
         module_config = "\n  services." + str(module["nixName"]) + " = {\n    enable = true;\n  "
         for option in module["options"]:
