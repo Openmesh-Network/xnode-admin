@@ -8,3 +8,6 @@ version='0.0.0'
 description='Agent service for Xnode'
 urls.source='https://github.com/Openmesh-Network/xnode-admin'
 dependencies = ["gitpython", "psutil", "requests"]
+
+[project.scripts]
+openmesh-xnode-admin = "xnode_admin:nix_rebuilder"
