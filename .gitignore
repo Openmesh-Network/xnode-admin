@@ -1,2 +1,4 @@
+build/
+pip/
 dist/
 venv/
