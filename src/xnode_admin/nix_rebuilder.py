@@ -47,7 +47,7 @@ def parse_args():
         
         if o.startswith("-p"): # Find uuid / psk at /proc/cmdline
             with open("/proc/cmdline") as file:
-                kvars = file.read.split(" ")
+                kvars = file.read().split(" ")
                 for kvar in kvars:
                     if kvar.startswith("XNODE_UUID="):
                         userid = kvar.split('=')[1]
