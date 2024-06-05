@@ -1,1 +1,1 @@
-import nix_rebuilder
+from . import nix_rebuilder
