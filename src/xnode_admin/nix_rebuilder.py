@@ -216,7 +216,7 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
             headers = {
                 'content-type': 'application/json',
                 'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
-                'x-parse-session-token': access_token.strip("b''"),
+                'x-parse-session-token': str(access_token).strip("b''"),
             }
             requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
 
