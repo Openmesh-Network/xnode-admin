@@ -52,7 +52,7 @@ def parse_args():
                     if kvar.startswith("XNODE_UUID="):
                         userid = kvar.split('=')[1]
                     if kvar.startswith("XNODE_ACCESS_TOKEN="):
-                        user_key = kvar.split('=')[1]
+                        user_key = kvar.split('=')[1].strip("b''\n'"),
                 if userid is None or user_key is None:
                     print("Failed to find XNODE_UUID or XNODE_ACCESS_TOKEN in /proc/cmdline")
                     sys.exit(1)
@@ -159,7 +159,7 @@ def rebuild_nixos():
     # To-Do: Rebuild NixOS function for error logging
     os.system("nixos-rebuild switch") # Rebuild NixOS  --flake .#xnode
 
-def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
+def fetch_config_studio(studio_url, xnode_uuid, access_token, config_location):
     # Talks to the dpl backend to configure the xnode directly.
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
@@ -202,7 +202,7 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
             # TODO: Send metrics to Xnode Studio
             disk = psutil.disk_usage('/')
             message = {
-                "id": str(xnode_Id),
+                "id": str(xnode_uuid),
                 "cpuPercent": (avg_cpu_usage),
                 "cpuPercentPeek": (highest_cpu_usage),
                 "ramMbUsed": (avg_mem_usage),
@@ -216,12 +216,12 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
             headers = {
                 'content-type': 'application/json',
                 'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
-                'x-parse-session-token': str(access_token).strip("b''"),
+                'x-parse-session-token': access_token,
             }
             requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
 
             message = {
-                "id": str(xnode_Id),
+                "id": str(xnode_uuid),
             }
 
             # TODO: Add an option to check a hash or something to lower bandwidth.
@@ -233,7 +233,6 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
                 config_updated = process_config(latest_config, latest_config_location)
 
                 if config_updated:
-                    # TODO: Rebuild NixOS
                     rebuild_nixos()
             else:
                 print('Request failed, status: ', config_response.status_code)
