@@ -52,7 +52,8 @@ def parse_args():
                     if kvar.startswith("XNODE_UUID="):
                         userid = kvar.split('=')[1]
                     if kvar.startswith("XNODE_ACCESS_TOKEN="):
-                        user_key = kvar.split('=')[1].strip("b''\n'"),
+                        user_key = kvar.split('=')[1]
+                        user_key = str(user_key).strip("b''\n'")
                 if userid is None or user_key is None:
                     print("Failed to find XNODE_UUID or XNODE_ACCESS_TOKEN in /proc/cmdline")
                     sys.exit(1)
