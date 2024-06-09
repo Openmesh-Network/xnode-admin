@@ -75,6 +75,9 @@ def main():
         if key_type == "access_token":
             # Remote repo is the studio's URL and User key is a preshared secret.
             fetch_config_studio(remote_repo_path, uuid, user_key, local_repo_path)
+        else:
+            print("Error: Studio mode only supports access token authentication.")
+            sys.exit(1)
     else:
         # If there is no git repository at the local path, clone it.
         if not os.path.exists(local_repo_path):
@@ -213,7 +216,7 @@ def fetch_config_studio(studio_url, xnode_Id, access_token, config_location):
             headers = {
                 'content-type': 'application/json',
                 'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
-                'x-parse-session-token': access_token,
+                'x-parse-session-token': access_token.strip("b''"),
             }
             requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
 
