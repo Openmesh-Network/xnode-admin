@@ -222,11 +222,10 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             }
 
             # TODO: Add an option to check a hash or something to lower bandwidth.
-            print('Fetching update message.')
+            print('Fetching update message at', time.time())
             config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
-            latest_config = json.loads(config_response.text)
-
             if config_response.ok:
+                latest_config = config_response.json()
                 config_updated = process_config(latest_config, state_directory)
 
                 if config_updated:

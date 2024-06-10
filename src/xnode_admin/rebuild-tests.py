@@ -15,7 +15,9 @@ def read_mock():
 
 @app.route('/xnodes/functions/getXnodeServices', methods=['GET'])
 def serve_config():
-    return(read_mock())
+    mockdata =read_mock()
+    print(mockdata)
+    return(mockdata)
 
 @app.route('/xnodes/functions/pushXnodeHeartbeat', methods=['POST'])
 def post_metrics():
