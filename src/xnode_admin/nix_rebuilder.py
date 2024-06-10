@@ -23,7 +23,7 @@ def parse_args():
         print(sys.argv[1], sys.argv[2], sys.argv[3]) # Git remote
         # input validation for first 3 arguments (eg, int conversion, remote existence / reachability)
     else:
-        print("Usage: xnode-rebuilder -[sgd] GIT_LOCATION GIT_REMOTE SEARCH_INTERVAL [USER_KEY] [POWERDNS_URL]")
+        print("Usage: xnode-rebuilder -[sgd] GIT_LOCAL GIT_REMOTE SEARCH_INTERVAL [USER_KEY] [POWERDNS_URL]")
         print("Git local and remote are required, user key can be SSH or GPG and powerdns is for scaling.")
         print("If using a USER_KEY please specify -s for SSH or -g for gpg.")
         sys.exit(1)
@@ -147,7 +147,7 @@ def configure_keys(user_key, use_ssh, repo):
         elif use_ssh is False:
             try:
                 with repo.config_writer() as config: # To-do: Implement GPG
-                    config.set_value("gpg", "format", "") # UPDATE
+                    config.set_value("gpg", "format", "")
                     config.set_value("user","signingKey", user_key) # Hex of gpg public key
                     config.release()
             except git.GitCommandError:
@@ -158,20 +158,16 @@ def configure_keys(user_key, use_ssh, repo):
 def rebuild_nixos():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
-    os.system("nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix") # Rebuild NixOS  --flake .#xnode
+    os.system("nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
 
-def fetch_config_studio(studio_url, xnode_uuid, access_token, config_location):
+def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
-    latest_config_location = Path(config_location) # Hardcoded, should be local_repo
-    if not latest_config_location.is_file():
-        # Create an empty json file so that the rest of the code can assume it is there.
-        pass
 
-    # Loop forever, pulling changes from Xnode Studio and collecting metrics to send.
+    # Pull changes from Xnode Studio and collecting metrics to send back in heartbeat.
     while True:
         # Collect metrics
         cpu_usage_list.append(psutil.cpu_percent())
@@ -198,7 +194,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, config_location):
 
             avg_mem_usage = total / len(mem_usage_list)
 
-            # Submit heartbeat with metrics, reconfigure if required.
+            # Submit heartbeat with metrics and reconfigure if required.
 
             # TODO: Send metrics to Xnode Studio
             disk = psutil.disk_usage('/')
@@ -231,7 +227,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, config_location):
             latest_config = json.loads(config_response.text)
 
             if config_response.ok:
-                config_updated = process_config(latest_config, latest_config_location)
+                config_updated = process_config(latest_config, state_directory)
 
                 if config_updated:
                     rebuild_nixos()
@@ -247,14 +243,17 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, config_location):
         precision = 1 # (seconds) Increase to trade performance for metric precision
         time.sleep(precision)
 
-def process_config(raw_json_studio, xnode_nix_path):
+def process_config(raw_json_studio, state_directory):
     # 1 Check if config has changed
-    if not os.path.isfile("/latest_config.json"):
-        with open("./latest_config.json", "w") as f:
+    json_path = state_directory+"/latest_config.json"
+    config_path = state_directory+"/config.nix"
+
+    if not os.path.isfile(json_path):
+        with open(json_path, "w") as f:
             last_config = "{}"
             f.write(last_config)
     else:
-        with open("./latest_config.json", "r") as f:
+        with open(json_path, "r") as f:
             last_config = json.load(f)
 
     if last_config == raw_json_studio:
@@ -269,21 +268,22 @@ def process_config(raw_json_studio, xnode_nix_path):
         new_sys_config += module_config + "};"
     new_sys_config += "\n}"
     print(new_sys_config)
-    # Write the new config to the .nix file
-    with open(xnode_nix_path, "w") as f:
+
+    # 3 Write the new config to the .nix file
+    with open(config_path, "w") as f:
         f.write(new_sys_config)
-    with open("./latest_config.json", "w") as f:
+    with open(json_path, "w") as f:
         f.write(json.dumps(raw_json_studio))
     return True
 
-def parse_nix_primitive(type, value):
+def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://github.com/Openmesh-Network/NixScraper/blob/main/optionTypes.txt
     if type == "int":
         return value
     elif type == "float":
         return float(value)
     elif type.startswith("/") or type.startswith("./"):
         return value
-    elif type == "string":
+    elif "string" in type:
         return '"' + value + '"'
     else:
         return value
