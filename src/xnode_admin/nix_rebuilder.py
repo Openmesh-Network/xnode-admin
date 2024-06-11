@@ -158,7 +158,7 @@ def configure_keys(user_key, use_ssh, repo):
 def rebuild_nixos():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
-    os.system("sudo /run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
+    os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
