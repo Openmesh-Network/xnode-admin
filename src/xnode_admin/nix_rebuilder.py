@@ -158,7 +158,7 @@ def configure_keys(user_key, use_ssh, repo):
 def rebuild_nixos():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
-    os.system("nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
+    os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
@@ -261,7 +261,7 @@ def process_config(raw_json_studio, state_directory):
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{"
     for module in raw_json_studio:
-        module_config = "\n  services." + str(module["nixName"]) + " = {\n    enable = true;\n  "
+        module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
         for option in module["options"]:
             module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
         new_sys_config += module_config + "};"
@@ -284,6 +284,8 @@ def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://
         return value
     elif "string" in type:
         return '"' + value + '"'
+    elif "raw" in type:
+        return value
     else:
         return value
 
