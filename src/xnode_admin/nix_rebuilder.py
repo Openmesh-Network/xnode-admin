@@ -10,10 +10,6 @@ import requests
 import json
 
 
-# NOTE: Not secret, just used to prevent blind spam.
-DPL_BACKEND_APP_KEY='as90qw90uj3j9201fj90fj90dwinmfwei98f98ew0-o0c1m221dds222143'
-
-
 def parse_args():
     # Simple function to pass in arguments from the command line, argument order is important.
     opts = [opt for opt in sys.argv[1:] if opt.startswith("-")]
@@ -34,15 +30,15 @@ def parse_args():
 
     for o in opts:
         if o.startswith("--uuid="):
-            userid = o.split('=')[1]
+            userid = o.split('--uuid=')[1]
         if o.startswith("--ssh-dir="):
-            user_key = o.split('=')[1]
+            user_key = o.split('--ssh-dir=')[1]
             key_type = "ssh"
         elif o.startswith("--gpg-key="):
-            user_key = o.split('=')[1]
+            user_key = o.split('--gpg-key=')[1]
             key_type = "gpg"
         elif o.startswith("--access-token="):
-            user_key = o.split('=')[1]
+            user_key = o.split('--access-token=')[1]
             key_type = "access_token"
         
         if o.startswith("-p"): # Find uuid / psk at /proc/cmdline
@@ -50,9 +46,9 @@ def parse_args():
                 kvars = file.read().split(" ")
                 for kvar in kvars:
                     if kvar.startswith("XNODE_UUID="):
-                        userid = kvar.split('=')[1]
+                        userid = kvar.split('XNODE_UUID=')[1]
                     if kvar.startswith("XNODE_ACCESS_TOKEN="):
-                        user_key = kvar.split('=')[1]
+                        user_key = kvar.split('XNODE_ACCESS_TOKEN=')[1]
                         user_key = str(user_key).strip("b''\n'")
                 if userid is None or user_key is None:
                     print("Failed to find XNODE_UUID or XNODE_ACCESS_TOKEN in /proc/cmdline")
@@ -67,7 +63,6 @@ def parse_args():
 
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
-
     local_repo_path, remote_repo_path, fetch_interval, user_key, key_type, uuid,  = parse_args() # powerdns_url not implemented yet
 
     # Hack to use Xnode Studio API rather than a git remote
@@ -158,7 +153,8 @@ def configure_keys(user_key, use_ssh, repo):
 def rebuild_nixos():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
-    os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
+    exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
+    print("Rebuild exit code: ", exit_code)
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
@@ -212,7 +208,6 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
             headers = {
                 'content-type': 'application/json',
-                'X-Parse-Application-Id': DPL_BACKEND_APP_KEY,
                 'x-parse-session-token': access_token,
             }
             requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
@@ -251,6 +246,7 @@ def process_config(raw_json_studio, state_directory):
         with open(json_path, "w") as f:
             last_config = "{}"
             f.write(last_config)
+            print("Created empty config at", json_path)
     else:
         with open(json_path, "r") as f:
             last_config = json.load(f)

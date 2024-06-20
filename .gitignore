@@ -2,3 +2,6 @@ build/
 pip/
 dist/
 venv/
+
+config.nix
+latest_config.json
