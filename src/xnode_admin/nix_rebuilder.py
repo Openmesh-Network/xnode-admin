@@ -44,6 +44,7 @@ def parse_args():
         if o.startswith("-p"): # Find uuid / psk at /proc/cmdline
             with open("/proc/cmdline") as file:
                 kvars = file.read().split(" ")
+                print(kvars)
                 for kvar in kvars:
                     if kvar.startswith("XNODE_UUID="):
                         userid = kvar.split('XNODE_UUID=')[1]
@@ -64,6 +65,7 @@ def parse_args():
 def main():
     # Program usage: xnode-rebuilder <local path> <git remote repo> <search interval> <optional: GPG Key> <optional: POWERDNS_URL>
     local_repo_path, remote_repo_path, fetch_interval, user_key, key_type, uuid,  = parse_args() # powerdns_url not implemented yet
+    print(key_type, user_key, "with uuid ", uuid)
 
     # Hack to use Xnode Studio API rather than a git remote
     if fetch_interval == 0: # Studio uses a hardcoded interval
@@ -90,7 +92,7 @@ def main():
         configure_keys(user_key, key_type, repo)
         git_bin = repo.git
 
-        # Loop forever, pulling changes from git.
+        # Loop forever, pulling changes from git. (Todo: Abstract to function fetch_config_git)
         while True:
             # If the interval has passed since the last check then fetch the latest head.
             if last_checked + fetch_interval < time.time():
@@ -155,6 +157,7 @@ def rebuild_nixos():
     # To-Do: Add error handling for a failed nixos rebuild
     exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
     print("Rebuild exit code: ", exit_code)
+    return exit_code    
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
@@ -172,28 +175,12 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
         # If the interval has passed since the last check then fetch from the studio.
         if last_checked + hearbeat_interval < time.time():
             # Calculate metrics (average and maximum)
-            total = 0
-            highest_cpu_usage = 0
-            for i in cpu_usage_list:
-                if i > highest_cpu_usage:
-                    highest_cpu_usage = i
-                total += i
+            avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
-            avg_cpu_usage = total / len(cpu_usage_list)
-
-            total = 0
-            highest_mem_usage = 0
-            for i in mem_usage_list:
-                if i > highest_mem_usage:
-                    highest_mem_usage = i
-                total += i
-
-            avg_mem_usage = total / len(mem_usage_list)
-
-            # Submit heartbeat with metrics and reconfigure if required.
-
-            # TODO: Send metrics to Xnode Studio
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage('/') # Only gets disk usage from root
+            headers = {
+                'x-parse-session-token': access_token,
+            }
             message = {
                 "id": str(xnode_uuid),
                 "cpuPercent": (avg_cpu_usage),
@@ -205,29 +192,37 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
-
-            headers = {
-                'content-type': 'application/json',
-                'x-parse-session-token': access_token,
-            }
-            requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
-
+            # Try to send a heartbeat to the studio
+            try:
+                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
+                if not heartbeat_response.ok:
+                    print(heartbeat_response.content)   
+            except requests.exceptions.RequestException as e:
+                print(e)
+            # Try to get it's Xnode Configuration
             message = {
                 "id": str(xnode_uuid),
             }
-
-            # TODO: Add an option to check a hash or something to lower bandwidth.
             print('Fetching update message at', time.time())
-            config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
-            if config_response.ok:
-                latest_config = config_response.json()
-                config_updated = process_config(latest_config, state_directory)
-
-                if config_updated:
-                    rebuild_nixos()
-            else:
-                print('Request failed, status: ', config_response.status_code)
-                print(config_response.content)
+            try:
+                config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
+                if not config_response.ok:
+                    print(config_response.content)
+                # Process response if one is received
+                if config_response.ok:
+                    json_path = state_directory+"/latest_config.json"
+                    latest_config = config_response.json()
+                    config_updated = process_config(latest_config, state_directory, json_path)
+                    # Rebuild system if config has changed
+                    if config_updated:
+                        rebuild_nixos()
+                        with open(json_path, "w") as f:
+                            f.write(json.dumps(latest_config))
+                else:
+                    print('Request failed, status: ', config_response.status_code)
+                    print(config_response.content)   
+            except requests.exceptions.RequestException as e:
+                print(e)
 
             # Reset last_checked and empty the lists
             cpu_usage_list = []
@@ -237,11 +232,9 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
         precision = 1 # (seconds) Increase to trade performance for metric precision
         time.sleep(precision)
 
-def process_config(raw_json_studio, state_directory):
-    # 1 Check if config has changed
-    json_path = state_directory+"/latest_config.json"
+def process_config(raw_json_studio, state_directory, json_path):
+    # 1 Check if config has changed since last rebuild
     config_path = state_directory+"/config.nix"
-
     if not os.path.isfile(json_path):
         with open(json_path, "w") as f:
             last_config = "{}"
@@ -267,8 +260,6 @@ def process_config(raw_json_studio, state_directory):
     # 3 Write the new config to the .nix file
     with open(config_path, "w") as f:
         f.write(new_sys_config)
-    with open(json_path, "w") as f:
-        f.write(json.dumps(raw_json_studio))
     return True
 
 def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://github.com/Openmesh-Network/NixScraper/blob/main/optionTypes.txt
@@ -284,6 +275,26 @@ def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://
         return value
     else:
         return value
+
+def calculate_metrics(cpu_usage_list, mem_usage_list):
+    total = 0
+    highest_cpu_usage = 0
+    for i in cpu_usage_list:
+        if i > highest_cpu_usage:
+            highest_cpu_usage = i
+        total += i
+
+    avg_cpu_usage = total / len(cpu_usage_list)
+
+    total = 0
+    highest_mem_usage = 0
+    for i in mem_usage_list:
+        if i > highest_mem_usage:
+            highest_mem_usage = i
+        total += i
+
+    avg_mem_usage = total / len(mem_usage_list)
+    return avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage
 
 def fetch_config_git():
     # To-do: Modularise the main function for readability
