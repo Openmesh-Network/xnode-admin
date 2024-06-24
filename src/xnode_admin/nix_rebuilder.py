@@ -187,7 +187,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "cpuPercentPeek": (highest_cpu_usage),
                 "ramMbUsed": (avg_mem_usage),
                 "ramMbPeek": (highest_mem_usage),
-                "ramMbTotal": (psutil.virtual_memory().total),
+                "ramMbTotal": (psutil.virtual_memory().total / (1024 * 1024)),
 
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
