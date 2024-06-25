@@ -249,11 +249,28 @@ def process_config(raw_json_studio, state_directory, json_path):
 
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{"
-    for module in raw_json_studio:
-        module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
-        for option in module["options"]:
-            module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
-        new_sys_config += module_config + "};"
+    if "services" in raw_json_studio:
+        print("Ran using api v0.2")
+        for module_config in raw_json_studio:
+            # config_type eg. services, users or networking
+            print(raw_json_studio[module_config]) # services
+            new_sys_config += module_config + " = {\n"
+            for submodule in raw_json_studio[module_config]:
+                print("______________")
+                if "nixName" in submodule.keys():
+                    print("Parsing nix config for", submodule["nixName"])
+                    new_sys_config += parse_nix_json(submodule)
+                else:
+                    print("No nixName found in:", submodule)
+
+            new_sys_config += "};"
+    else: # Otherwise assume all items are services (v0.1)
+        print("Ran using api v0.1")
+        for module in raw_json_studio:
+            module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
+            for option in module["options"]:
+                module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
+            new_sys_config += module_config + "};"
     new_sys_config += "\n}"
     print(new_sys_config)
 
@@ -261,6 +278,63 @@ def process_config(raw_json_studio, state_directory, json_path):
     with open(config_path, "w") as f:
         f.write(new_sys_config)
     return True
+
+def parse_nix_json(json_nix):
+    # Recursively construct the nix expression working through each nixName and options
+    """ 
+    Sample Json 
+    * UI-related fields removed
+    * Includes the level higher than will be passed into this function, only the list is passed into this function
+    {
+        "services" : [{
+        "nixName": "minecraft-server",
+        "options": [
+            {
+            "nixName": "eula",
+            "type": "boolean",
+            "value": "true"
+            },
+            {
+            "nixName": "declarative",
+            "type": "boolean",
+            "value": "true"
+            }
+        }]
+    }
+    In this example 'services' is the top-level config_type and each nixName under is a valid service module.
+
+    Sample Nix:
+        users.users."xnode".openssh.authorizedKeys = [ ssh-ed25519 AAAA...];
+        networking.firewall.enable = true;
+        services.openssh.enable = true;    
+    """
+    # If we are in a list (eg. services or options) parse each item
+    print(type(json_nix))
+    if isinstance(json_nix, list):
+        nix_in_progress = ""
+        for item in json_nix:
+            print("ITEM:", item["nixName"])
+            nix_in_progress += parse_nix_json(item)
+            print("CURRENT IN PROGRESS:", nix_in_progress)
+            print("-----------------------------------")
+
+        return nix_in_progress
+
+    elif isinstance(json_nix, dict):
+        # A nix module with options, valid syntax: "minecraft-server = {options...};"
+        if ("nixName" in json_nix.keys()) and ("options" in json_nix.keys()):
+            #print("Found nixName and options in:", json_nix)
+            return json_nix["nixName"] + " = {\n" + parse_nix_json(json_nix["options"]) + "};\n"
+
+        # An option with a value
+        if ("value" in json_nix.keys()) and ("options" not in json_nix.keys()):
+            #print("Found value in:", json_nix)
+            return json_nix["nixName"] + " = " + parse_nix_primitive(json_nix["type"], json_nix["value"]) + ";\n"
+
+    else:
+        print("Invalid input:", json_nix)
+        print("Cannot be type: ", type(json_nix))
+        return ""
 
 def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://github.com/Openmesh-Network/NixScraper/blob/main/optionTypes.txt
     if type == "int":

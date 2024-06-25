@@ -6,3 +6,4 @@ venv/
 config
 latest_config
 example-procmdline
+*.cpython*
