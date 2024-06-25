@@ -19,14 +19,12 @@ def parse_args():
         print(sys.argv[1], sys.argv[2], sys.argv[3]) # Git remote
         # input validation for first 3 arguments (eg, int conversion, remote existence / reachability)
     else:
-        print("Usage: xnode-rebuilder -[sgd] GIT_LOCAL GIT_REMOTE SEARCH_INTERVAL [USER_KEY] [POWERDNS_URL]")
+        print("Usage: xnode-rebuilder -[sgd] LOCAL_DIR REMOTE_CONFIG SEARCH_INTERVAL [USER_KEY] [POWERDNS_URL]")
         print("Git local and remote are required, user key can be SSH or GPG and powerdns is for scaling.")
         print("If using a USER_KEY please specify -s for SSH or -g for gpg.")
         sys.exit(1)
 
-    user_key=None
-    key_type=None
-    userid=None
+    user_key, key_type, userid = None, None, None
 
     for o in opts:
         if o.startswith("--uuid="):
@@ -41,11 +39,10 @@ def parse_args():
             user_key = o.split('--access-token=')[1]
             key_type = "access_token"
         
-        if o.startswith("-p"): # Find uuid / psk at /proc/cmdline
+        if o.startswith("-p"): # Find uuid & psk at /proc/cmdline
             with open("/proc/cmdline") as file:
-                kvars = file.read().split(" ")
-                print(kvars)
-                for kvar in kvars:
+                kernel_params = file.read().split(" ")
+                for kvar in kernel_params:
                     if kvar.startswith("XNODE_UUID="):
                         userid = kvar.split('XNODE_UUID=')[1]
                     if kvar.startswith("XNODE_ACCESS_TOKEN="):
@@ -58,7 +55,7 @@ def parse_args():
                     key_type = "access_token"
 
         if o.startswith("--powerdns="):
-            powerdns_url = o.split('=')[1] # Todo
+            powerdns_url = o.split('=')[1] # Todo: Scalability + QoL with TXT records
 
     return args[0], args[1], int(args[2]), user_key, key_type, userid
 
@@ -232,7 +229,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
         precision = 1 # (seconds) Increase to trade performance for metric precision
         time.sleep(precision)
 
-def process_config(raw_json_studio, state_directory, json_path):
+def process_config(studio_json_config, state_directory, json_path):
     # 1 Check if config has changed since last rebuild
     config_path = state_directory+"/config.nix"
     if not os.path.isfile(json_path):
@@ -244,18 +241,18 @@ def process_config(raw_json_studio, state_directory, json_path):
         with open(json_path, "r") as f:
             last_config = json.load(f)
 
-    if last_config == raw_json_studio:
+    if last_config == studio_json_config:
         return False # Same config as last update.
 
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{"
-    if "services" in raw_json_studio:
+    if "services" in studio_json_config:
         print("Ran using api v0.2")
-        for module_config in raw_json_studio:
+        for module_config in studio_json_config:
             # config_type eg. services, users or networking
-            print(raw_json_studio[module_config]) # services
+            print(studio_json_config[module_config]) # services
             new_sys_config += module_config + " = {\n"
-            for submodule in raw_json_studio[module_config]:
+            for submodule in studio_json_config[module_config]:
                 print("______________")
                 if "nixName" in submodule.keys():
                     print("Parsing nix config for", submodule["nixName"])
@@ -266,7 +263,7 @@ def process_config(raw_json_studio, state_directory, json_path):
             new_sys_config += "};"
     else: # Otherwise assume all items are services (v0.1)
         print("Ran using api v0.1")
-        for module in raw_json_studio:
+        for module in studio_json_config:
             module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
             for option in module["options"]:
                 module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "

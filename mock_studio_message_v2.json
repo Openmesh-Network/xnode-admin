@@ -123,6 +123,13 @@
     }
   ],
   "networking": [{
-    "nixName":"firewall"
+    "nixName":"firewall",
+    "options":[
+      {
+        "nixName":"enable",
+        "type":"boolean",
+        "value":"true"
+      }
+    ]
   }]
 }
