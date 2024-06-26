@@ -4,7 +4,7 @@ import psutil
 import requests
 import time
 import git
-from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys
+from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
 import hmac
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
@@ -38,7 +38,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
-            heartbeat_hmac = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json.dumps(heartbeat_message), 'utf-8'), digestmod='sha256').hexdigest()
+            heartbeat_hmac = generate_hmac(access_token, heartbeat_message)
             heartbeat_headers = {
                 'x-parse-session-token': heartbeat_hmac  
             }
@@ -54,7 +54,10 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             get_config_message = {
                 "id": str(xnode_uuid),
             }
-            get_config_hmac = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json.dumps(get_config_message), 'utf-8'), digestmod='sha256').hexdigest()
+            json_str = json.dumps(get_config_message)
+
+            print("The message we're signing: ", json_str)
+            get_config_hmac = generate_hmac(access_token, get_config_message)
             get_config_headers = {
                 'x-parse-session-token': get_config_hmac  
             }

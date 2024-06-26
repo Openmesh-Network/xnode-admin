@@ -1,5 +1,7 @@
 import sys
 import git
+import hmac
+import json
 
 def parse_args():
     # Simple function to pass in arguments from the command line, argument order is important.
@@ -155,3 +157,9 @@ def configure_keys(user_key, use_ssh, repo):
                 print("Failed to set SSH key", git.GitCommandNotFound)
         else: # When use_ssh is None
             pass
+
+def generate_hmac(access_token, message):
+    json_str = json.dumps(message).strip(" ")
+    # To-do clean up the bytes stuff if possible (eg. store as bytes in memory from the start)
+    msg_hmac_hex = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json_str, 'utf-8'), digestmod='sha256').hexdigest()
+    return msg_hmac_hex

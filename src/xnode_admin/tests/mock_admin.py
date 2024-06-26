@@ -13,6 +13,9 @@ def hmac_test(access_token):
         "id": uuid,
         "other-data":"abcxyz"
     }
+
+    print("output:")
+    print(json.dumps(message))
     msg_hmac = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json.dumps(message), 'utf-8'), digestmod='sha256').hexdigest()
     headers = {
         'x-parse-session-token': msg_hmac
