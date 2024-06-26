@@ -1,1 +1,0 @@
-python src/xnode_admin/nix_rebuilder.py xnode https://github.com/harrys522/sample-nix-repo 20 -s ./key/keyfile
