@@ -90,7 +90,7 @@ def parse_nix_json(json_nix):
     elif isinstance(json_nix, dict):
         # A nix module with options, valid syntax: "minecraft-server = {options...};"
         if ("nixName" in json_nix.keys()) and ("options" in json_nix.keys()):
-            return "  " + json_nix["nixName"] + " = {\n" + parse_nix_json(json_nix["options"]) + "};\n"
+            return "  " + json_nix["nixName"] + " = {\n" + parse_nix_json(json_nix["options"]) + "  };\n"
 
         # An option with a value
         if ("value" in json_nix.keys()) and ("options" not in json_nix.keys()):
