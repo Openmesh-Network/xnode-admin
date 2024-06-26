@@ -17,6 +17,9 @@ This admin service will have the following loops:
 * quick pull txt record as bloom filter record from powerdns 
     * when it receives the correct uuid as a bloom filter it will trigger an instant git pull from the configured remote
 
+# General Usage
+Find helper shell scripts as samples of usage, there are a number of scripts that can be used speed up the development and testing.
+
 ## Usage as a json-based rebuilder
 The initial release version of this software will communicate directly with the Studio via an API, building it's configuration from a JSON response received from the Xnode Studio.
 

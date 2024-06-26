@@ -5,6 +5,7 @@ import requests
 import time
 import git
 from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys
+import hmac
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Talks to the dpl backend to configure the xnode directly.
@@ -12,6 +13,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
+    
 
     # Pull changes from Xnode Studio and collecting metrics to send back in heartbeat.
     while True:
@@ -25,10 +27,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
             disk = psutil.disk_usage('/') # Only gets disk usage from root
-            headers = {
-                'x-parse-session-token': access_token,
-            }
-            message = {
+            heartbeat_message = {
                 "id": str(xnode_uuid),
                 "cpuPercent": (avg_cpu_usage),
                 "cpuPercentPeek": (highest_cpu_usage),
@@ -39,20 +38,29 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
-            # Try to send a heartbeat to the studio
+            heartbeat_hmac = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json.dumps(heartbeat_message), 'utf-8'), digestmod='sha256').hexdigest()
+            heartbeat_headers = {
+                'x-parse-session-token': heartbeat_hmac  
+            }
+
+            # Try to send a heartbeat to the studio, then pull the config
             try:
-                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
+                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
                 if not heartbeat_response.ok:
                     print(heartbeat_response.content)   
             except requests.exceptions.RequestException as e:
                 print(e)
-            # Try to get it's Xnode Configuration
-            message = {
+
+            get_config_message = {
                 "id": str(xnode_uuid),
+            }
+            get_config_hmac = hmac.new(bytes(access_token, 'utf-8'), msg = bytes(json.dumps(get_config_message), 'utf-8'), digestmod='sha256').hexdigest()
+            get_config_headers = {
+                'x-parse-session-token': get_config_hmac  
             }
             print('Fetching update message at', time.time())
             try:
-                config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
+                config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
                 if not config_response.ok:
                     print(config_response.content)
                 # Process response if one is received
