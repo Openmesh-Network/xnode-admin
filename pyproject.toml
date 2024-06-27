@@ -10,4 +10,4 @@ urls.source='https://github.com/Openmesh-Network/xnode-admin'
 dependencies = ["gitpython", "psutil", "requests"]
 
 [project.scripts]
-openmesh-xnode-admin = "xnode_admin.nix_rebuilder:main"
+openmesh-xnode-admin = "xnode_admin.main:main"
