@@ -3,6 +3,7 @@ pip/
 dist/
 venv/
 
-config
-latest_config
+config.nix
+latest_config.json
 example-procmdline
+*.cpython*

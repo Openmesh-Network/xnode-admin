@@ -1,6 +1,7 @@
 # Emulates connection to the studio
 from flask import Flask, request, jsonify
 import json
+import sys
 app = Flask(__name__)
 
 avg_cpu_usage = float(0)
@@ -9,8 +10,13 @@ highest_cpu_usage = float(0)
 highest_mem_usage = float(0)
 messages = []
 
+if len(sys.argv) > 1:
+    mock_msg_path = sys.argv[1]
+else: 
+    mock_msg_path = "mock_studio_message.json"
+
 def read_mock():
-    with open("mock_studio_message.json", "r") as f:
+    with open(mock_msg_path, "r") as f:
         return f.read()
 
 @app.route('/xnodes/functions/getXnodeServices', methods=['GET'])
