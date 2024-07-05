@@ -1,7 +1,7 @@
 
 import sys
-from utils import parse_all_args
-from xnode_builder import fetch_config_git, fetch_config_studio
+from .utils import parse_all_args
+from .xnode_builder import fetch_config_git, fetch_config_studio
 
 def main():
     program_args = parse_all_args()

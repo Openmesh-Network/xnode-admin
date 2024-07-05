@@ -1,4 +1,4 @@
-from nix_rebuilder import parse_nix_json
+from xnode_admin.xnode_builder import parse_nix_json
 import json
 
 with open("mock_studio_message.json", "r") as f:
