@@ -6,16 +6,12 @@ Develop configuration infrastructure for a deployed xnode that can be hosted by 
 Develop scalability features to handle many configuration changes made through openmesh.
 
 ## Core functionality
-* Wallet signing / authentication
-* Nix configuration is changed through git 
-* Logic for calling nixos-rebuild and returning readable output to the user/studio
-
-isomorphic-git in front-end that pushes wallet-signed commits to a git repository.
-
-This admin service will have the following loops:
-* regularly pull from git remote per interval (eg. 5 mins, configurable via response from the server)
-* quick pull txt record as bloom filter record from powerdns 
-    * when it receives the correct uuid as a bloom filter it will trigger an instant git pull from the configured remote
+* Xnode configuration 
+    * Git-based .nix configuration
+    * Xnode Studio API (Json->Nix)
+* Sending a heartbeat message and system metrics back to the Studio UI.
+* Logic for calling nixos-rebuild and returning readable output to the user/studio.
+* Wallet signing / authentication (Not implemented)
 
 ## Usage as a json-based rebuilder
 The initial release version of this software will communicate directly with the Studio via an API, building it's configuration from a JSON response received from the Xnode Studio.
@@ -41,17 +37,22 @@ python src/xnode_admin/main.py --remote http://localhost:5000/xnodes/functions -
 * Refactor with a class to tidy up the main function.
 
 ## Usage as a git-based rebuilder
-` xnode-rebuilder GIT_LOCATION GIT_REMOTE SEARCH_INTERVAL [GPG_KEY] [POWERDNS_URL] `
+Development of the git-based system is currently not a priority for the core team.
 
-`GIT_LOCATION` is the local directory where the git folder should be cloned. Ensure that your configuration.nix imports this.
+`src/xnode_admin/main.py --git-mode --no-proc --remote <git_remote> --interval <search_interval> [state_directory]`
 
-`GIT_REMOTE` is the remote location to pull configuration updates from.
+`state_directory` is the local directory to which the git repository will be cloned.
 
-`SEARCH_INTERVAL` is the interval between git pulls measured in seconds (s).
+`git_remote` is the remote location to pull configuration updates from.
 
-`GPG_KEY` (optional) path to the gpg public key.
+`search_interval` is the interval between git pulls measured in seconds (s).
 
-`POWERDNS_URL` (optional) is for scalability, it is a way to receive TXT records that trigger immediate pull from git.
+() Future security feature: git signing keys
 
-### Important note about git-based rebuilder
-If the program is cofigured to use a siging key and there are unsigned commits to the source repository, eg it is compromised or there is a malfunction, then the Xnode will not pull those commits due to a git command error exception. It will however pull the next signed commit, so Xnode Studio should handle notifying the user of untracked / unsigned commits and merging or dropping them.
+`key_type` the type of key, by default git supports ssh and gpg
+
+`git_key` the path to an ssh key or the id for a gpg key.
+
+
+### Planned Feature: WalletConnect integration
+For the next interation of Xnode Studio, integrate WalletConnect authentication and require an Xnode configuration to be signed by its owner's wallet for it to be accepted by the machine.
