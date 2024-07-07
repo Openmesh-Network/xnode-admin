@@ -4,16 +4,16 @@ import psutil
 import requests
 import time
 import git
-from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys
+from .utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
-    # Talks to the dpl backend to configure the xnode directly.
+
+    # Push a heartbeat with metrics to the studio and pull a configuration.
     hearbeat_interval = 15 # Heartbeat interval in seconds
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
 
-    # Pull changes from Xnode Studio and collecting metrics to send back in heartbeat.
     while True:
         # Collect metrics
         cpu_usage_list.append(psutil.cpu_percent())

@@ -24,15 +24,15 @@ Running rebuild_tests.py will emulate the studio using 'mock_studio_message.json
 
 In the XnodeOS implementation, the command is run as the following assuming that the UUID and ACCESS_TOKEN are passed as kernel parameters.
 
-`nix_rebuilder.py -p STATE_DIRECTORY REMOTE_CONFIG_API 0`
+`src/xnode_admin/main.py --remote <url> [STATE_DIRECTORY]`
 
-Run the following commands for development and testing on your local machine.
+Run the following commands for development and testing on your local machine:
 
 ```
+mkdir xnode
 python src/xnode_admin/tests/rebuild_tests.py &
-python src/xnode_admin/nix_rebuilder.py . http://localhost:5000/xnodes/functions 0 --uuid=ABC --access-token=XYZ
+python src/xnode_admin/main.py --remote http://localhost:5000/xnodes/functions --uuid=ABC --access-token=XYZ xnode
 ```
-
 
 ## Progress / To-Do
 * Integration with Isomorphic git on the front-end

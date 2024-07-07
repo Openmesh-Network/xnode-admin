@@ -1,1 +1,1 @@
-from . import nix_rebuilder
+from . import main as xnode_admin
