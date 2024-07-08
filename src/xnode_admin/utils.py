@@ -2,84 +2,78 @@ import sys
 import git
 import hmac
 import json
+import argparse
 
-def parse_args():
-    # Simple function to pass in arguments from the command line, argument order is important.
-    opts = [opt for opt in sys.argv[1:] if opt.startswith("-")]
-    args = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
+def parse_cmd_args():
+    parser = argparse.ArgumentParser(description="Xnode Admin service daemon that manages XnodeOS from the Xnode Studio.", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("state_directory", help="Directory to store the xnode's configuration in", type=str, default="/var/lib/openmesh-xnode-admin")
+    parser.add_argument("--remote", help="Either an Xnode functions API (see dpl backend) or a git remote.", type=str)
+    parser.add_argument("--interval", help="How often to pull the git remote in seconds.", type=int, default=45)
+    parser.add_argument("--proc", help="Either an Xnode functions api (see dpl backend) or a git remote.", type=str, default="/proc/cmdline")
+    parser.add_argument("--no-proc", help="Don't read extra arguments from /proc/cmdline.", action="store_true")
+    parser.add_argument("--uuid", help="The XnodeOS uuid, used for the Xnode functions API.", type=str)
+    parser.add_argument("--access-token", help="The Xnode functions api access token, used to authenticate.", type=str)
+    parser.add_argument("--git-mode", help="Use git-based configuration instead of the Xnode functions API.", action="store_true")
+    parser.add_argument("--git-key", help="Optional git key used to verify commit signatures.", type=str)
+    parser.add_argument("--key-type", help="Type of key (ssh or gpg) used for git commit verification", type=str, default="ssh-ed25519")
 
-    if len(args) >=3:
-        print(sys.argv[1], sys.argv[2], sys.argv[3])
-        # input validation for first 3 arguments (eg, int conversion, remote existence / reachability)
+    return parser.parse_args()
+
+def parse_all_args():
+    # Get program arguments
+    args = parse_cmd_args()
+    if args.no_proc:
+        # Don't take any extra arguments
+        return args
     else:
-        print("Usage: xnode-rebuilder -[spgd] LOCAL_DIR REMOTE_CONFIG SEARCH_INTERVAL [USER_KEY] [POWERDNS_URL]")
-        print("Git local and remote are required, user key can be SSH or GPG and powerdns is for scaling.")
-        print("If using a USER_KEY please specify -s for SSH or -g for gpg.")
-        sys.exit(1)
+        # Read extra arguments from /proc/cmdline
+        print("Reading extra arguments from", args.proc)
+        with open(args.proc, 'r') as cmdline:
+            kernel_parameters = cmdline.read().split(" ")
 
-    user_key, key_type, userid = None, None, None
+            for param in kernel_parameters:
+                if param.startswith("XNODE_UUID="):
+                    args.uuid = param.split('XNODE_UUID=')[1]
+                    
+                if param.startswith("XNODE_ACCESS_TOKEN="):
+                    args.access_token = param.split('XNODE_ACCESS_TOKEN=')[1]
 
-    for o in opts:
-        if o.startswith("--uuid="):
-            userid = o.split('--uuid=')[1]
-        if o.startswith("--ssh-dir="):
-            user_key = o.split('--ssh-dir=')[1]
-            key_type = "ssh"
-        elif o.startswith("--gpg-key="):
-            user_key = o.split('--gpg-key=')[1]
-            key_type = "gpg"
-        elif o.startswith("--access-token="):
-            user_key = o.split('--access-token=')[1]
-            key_type = "access_token"
-        
-        if o.startswith("-p"): # Find uuid & psk at /proc/cmdline
-            with open("/proc/cmdline") as file:
-                kernel_params = file.read().split(" ")
-                for kvar in kernel_params:
-                    if kvar.startswith("XNODE_UUID="):
-                        userid = kvar.split('XNODE_UUID=')[1]
-                    if kvar.startswith("XNODE_ACCESS_TOKEN="):
-                        user_key = kvar.split('XNODE_ACCESS_TOKEN=')[1]
-                        user_key = str(user_key).strip("b''\n'")
-                if userid is None or user_key is None:
-                    print("Failed to find XNODE_UUID or XNODE_ACCESS_TOKEN in /proc/cmdline")
-                    sys.exit(1)
-                else:
-                    key_type = "access_token"
-
-        if o.startswith("--powerdns="):
-            powerdns_url = o.split("--powerdns=")[1] # Todo: Scalability + QoL with TXT records
-
-    return args[0], args[1], int(args[2]), user_key, key_type, userid
+                if param.startswith("XNODE_CONFIG_REMOTE="):
+                    args.remote = param.split('XNODE_CONFIG_REMOTE=')[1]
+    return args
 
 def parse_nix_json(json_nix):
-    # Recursively construct the nix expression working through each nixName and options
+    # Recursively construct the nix expression working through each nixName and it's options
     """ 
     Sample Json 
     * UI-related fields removed
     * Includes the level higher than will be passed into this function, only the list is passed into this function
     {
-        "services" : [{
-        "nixName": "minecraft-server",
-        "options": [
+        "services" : [
             {
-            "nixName": "eula",
-            "type": "boolean",
-            "value": "true"
-            },
-            {
-            "nixName": "declarative",
-            "type": "boolean",
-            "value": "true"
+            "nixName": "minecraft-server",
+            "options": [
+                {
+                "nixName": "eula",
+                "type": "boolean",
+                "value": "true"
+                },
+                {
+                "nixName": "declarative",
+                "type": "boolean",
+                "value": "true"
+                }
             }
-        }]
+        ]
     }
     In this example 'services' is the top-level config_type and each nixName under is a valid service module.
-
-    Sample Nix:
-        users.users."xnode".openssh.authorizedKeys = [ ssh-ed25519 AAAA...];
-        networking.firewall.enable = true;
-        services.openssh.enable = true;    
+    The above json evaluates to:
+        services = {
+            minecraft-server = {
+                eula = true;
+                declarative = true;
+            }
+        }
     """
     # If we are in a list (eg. services or options) parse each item recursively
     print(type(json_nix))
@@ -138,6 +132,7 @@ def calculate_metrics(cpu_usage_list, mem_usage_list):
     return avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage
 
 def configure_keys(user_key, use_ssh, repo):
+    # Configure the commit signing key for a git repo.
     if user_key is not None:
         if use_ssh:
             try:

@@ -1,4 +1,4 @@
-from xnode_admin import utils
+from xnode_admin.xnode_builder import parse_nix_json
 import json
 
 with open("mock_studio_message.json", "r") as f:
