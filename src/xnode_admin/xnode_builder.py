@@ -4,7 +4,8 @@ import psutil
 import requests
 import time
 import git
-from .utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys
+from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
+import base64
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
@@ -13,6 +14,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
+    preshared_key = base64.b64decode(access_token).hex()
 
     while True:
         # Collect metrics
@@ -25,10 +27,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
             disk = psutil.disk_usage('/') # Only gets disk usage from root
-            headers = {
-                'x-parse-session-token': access_token,
-            }
-            message = {
+            heartbeat_message = {
                 "id": str(xnode_uuid),
                 "cpuPercent": (avg_cpu_usage),
                 "cpuPercentPeek": (highest_cpu_usage),
@@ -39,32 +38,59 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
-            # Try to send a heartbeat to the studio
+            heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
+            heartbeat_headers = {
+                'x-parse-session-token': heartbeat_hmac  
+            }
+
+            # Try to send a heartbeat to the studio, then pull the config
             try:
-                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=headers, json=message)
+                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
                 if not heartbeat_response.ok:
                     print(heartbeat_response.content)   
             except requests.exceptions.RequestException as e:
                 print(e)
-            # Try to get it's Xnode Configuration
-            message = {
+
+            get_config_message = {
                 "id": str(xnode_uuid),
+            }
+            get_config_hmac = generate_hmac(preshared_key, get_config_message)
+            get_config_headers = {
+                'x-parse-session-token': get_config_hmac  
             }
             print('Fetching update message at', time.time())
             try:
-                config_response = requests.get(studio_url + '/getXnodeServices', headers=headers, json=message)
+                config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
                 if not config_response.ok:
                     print(config_response.content)
                 # Process response if one is received
                 if config_response.ok:
                     json_path = state_directory+"/latest_config.json"
                     latest_config = config_response.json()
-                    config_updated = process_studio_config(latest_config, state_directory, json_path)
+                    if "message" in latest_config.keys():
+                        message = latest_config["message"]
+                        message_computed_hmac = generate_hmac(preshared_key, message)
+                        if message_computed_hmac == latest_config["hmac"]:
+                            print("HMAC of configuration verified")
+                            parsed_message = json.loads(message)
+                            if parsed_message["expiry"] > time.time()*1000:
+                                xnode_config = parsed_message["xnode_config"]
+                                config_updated = process_studio_config(xnode_config, state_directory, json_path)
+                            else:
+                                print("Configuration expiry has passed")
+                                config_updated = False
+                        else:
+                            print("HMAC of configuration not verified:", message_computed_hmac, "against claimed:", latest_config["hmac"])
+                            config_updated = False
+                    else:
+                        # XXX: Redundant for messages with no hmac
+                        config_updated = process_studio_config(latest_config, state_directory, json_path)
                     # Rebuild system if config has changed
                     if config_updated:
-                        rebuild_os()
-                        with open(json_path, "w") as f:
-                            f.write(json.dumps(latest_config))
+                        rebuild_success = rebuild_os()
+                        if rebuild_success:
+                            with open(json_path, "w") as f:
+                                f.write(json.dumps(latest_config))
                 else:
                     print('Request failed, status: ', config_response.status_code)
                     print(config_response.content)   
@@ -92,7 +118,7 @@ def process_studio_config(studio_json_config, state_directory, json_path):
             last_config = json.load(f)
 
     if last_config == studio_json_config:
-        return False # Same config as last update.
+        return False # Same config as last saved.
 
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{\n  "

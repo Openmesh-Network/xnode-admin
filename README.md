@@ -13,6 +13,9 @@ Develop scalability features to handle many configuration changes made through o
 * Logic for calling nixos-rebuild and returning readable output to the user/studio.
 * Wallet signing / authentication (Not implemented)
 
+# General Usage
+Find helper shell scripts as samples of usage, there are a number of scripts that can be used speed up the development and testing.
+
 ## Usage as a json-based rebuilder
 The initial release version of this software will communicate directly with the Studio via an API, building it's configuration from a JSON response received from the Xnode Studio.
 
@@ -28,6 +31,7 @@ Run the following commands for development and testing on your local machine:
 mkdir xnode
 python src/xnode_admin/tests/rebuild_tests.py &
 python src/xnode_admin/main.py --remote http://localhost:5000/xnodes/functions --uuid=ABC --access-token=XYZ xnode
+
 ```
 
 ## Progress / To-Do

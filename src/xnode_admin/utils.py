@@ -1,5 +1,7 @@
 import sys
 import git
+import hmac
+import json
 import argparse
 
 def parse_cmd_args():
@@ -150,3 +152,19 @@ def configure_keys(user_key, use_ssh, repo):
                 print("Failed to set SSH key", git.GitCommandNotFound)
         else: # When use_ssh is None
             pass
+
+def generate_hmac(access_token, message):
+    if isinstance(message, dict):
+        print("generating hmac for dict")
+        json_str = json.dumps(message).replace(" ", "")
+    else:
+        json_str = message
+    if isinstance(access_token, str): # Assumes hex if string
+        msg_hmac_hex = hmac.new(bytes.fromhex(access_token), msg = bytes(json_str, 'utf-8'), digestmod='sha256').hexdigest()
+    elif isinstance(access_token, bytes):
+        msg_hmac_hex = hmac.new(access_token, msg = bytes(json_str, 'utf-8'), digestmod='sha256').hexdigest()
+    else:
+        print("Failed to generate HMAC:", access_token)
+    print("Generated HMAC", msg_hmac_hex, "for message:", json_str)
+    return msg_hmac_hex        
+

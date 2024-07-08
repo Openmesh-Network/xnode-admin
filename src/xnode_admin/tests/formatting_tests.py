@@ -11,7 +11,7 @@ def test():
     for module_type in mock_json:
         print(module_type + "SERVICES SERVICES SERVICES SERVICES SERVICES ")
         final_format += module_type + " = {\n"
-        final_format += parse_nix_json(mock_json[module_type], "")
+        final_format += utils.parse_nix_json(mock_json[module_type], "")
         final_format += "};\n"
 
     final_format += "}"    
@@ -77,5 +77,5 @@ my_test_json = {
     },
     ]
 }
-print(parse_nix_json(my_test_json["services"]))
+print(utils.parse_nix_json(my_test_json["services"]))
 #print(parse_nix_json(mock_json["services"]))
