@@ -4,7 +4,7 @@ import psutil
 import requests
 import time
 import git
-from utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
+from xnode_admin.utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
 import base64
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
