@@ -104,9 +104,12 @@ def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://
         return float(value)
     elif type.startswith("/") or type.startswith("./"):
         return value
-    elif "string" in type:
+    elif "string" == type:
         return '"' + value + '"'
     elif "raw" in type:
+        return value
+    elif "list of string" == type:
+        # Assume strings inside of the list of already quoted
         return value
     else:
         return value

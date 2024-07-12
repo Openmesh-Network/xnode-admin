@@ -213,6 +213,6 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
 def rebuild_os():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
-    exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix")
+    exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
     print("Rebuild exit code: ", exit_code)
     return exit_code    
