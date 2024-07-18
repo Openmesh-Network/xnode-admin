@@ -7,6 +7,26 @@ import git
 from xnode_admin.utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
 import base64
 
+
+def status_send(studio_url, xnode_uuid, preshared_key, status: str):
+    # Send configuring status to DPL.
+    status_message = {
+        "id": str(xnode_uuid),
+        "status": str(status),
+    }
+    status_hmac = generate_hmac(preshared_key, status_message)
+    status_headers = {
+        'x-parse-session-token': status_hmac
+    }
+
+    # Try to send a status to the studio, then pull the config
+    try:
+        status_response = requests.post(studio_url + '/pushXnodeStatus', headers=status_headers, json=status_message)
+        if not status_response.ok:
+            print(status_response.content)
+    except requests.exceptions.RequestException as e:
+        print(e)
+
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # Push a heartbeat with metrics to the studio and pull a configuration.
@@ -40,14 +60,14 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             }
             heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
             heartbeat_headers = {
-                'x-parse-session-token': heartbeat_hmac  
+                'x-parse-session-token': heartbeat_hmac
             }
 
             # Try to send a heartbeat to the studio, then pull the config
             try:
                 heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
                 if not heartbeat_response.ok:
-                    print(heartbeat_response.content)   
+                    print(heartbeat_response.content)
             except requests.exceptions.RequestException as e:
                 print(e)
 
@@ -56,7 +76,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             }
             get_config_hmac = generate_hmac(preshared_key, get_config_message)
             get_config_headers = {
-                'x-parse-session-token': get_config_hmac  
+                'x-parse-session-token': get_config_hmac
             }
             print('Fetching update message at', time.time())
             try:
@@ -85,15 +105,20 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                     else:
                         # XXX: Redundant for messages with no hmac
                         config_updated = process_studio_config(latest_config, state_directory, json_path)
+
                     # Rebuild system if config has changed
                     if config_updated:
+                        status_send(studio_url, xnode_uuid, preshared_key, "configuring")
                         rebuild_success = rebuild_os()
+
                         if rebuild_success:
+                            status_send(studio_url, xnode_uuid, preshared_key, "online")
+                            # Send online status to DPL.
                             with open(json_path, "w") as f:
                                 f.write(json.dumps(latest_config))
                 else:
                     print('Request failed, status: ', config_response.status_code)
-                    print(config_response.content)   
+                    print(config_response.content)
             except requests.exceptions.RequestException as e:
                 print(e)
 
@@ -215,4 +240,4 @@ def rebuild_os():
     # To-Do: Add error handling for a failed nixos rebuild
     exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
     print("Rebuild exit code: ", exit_code)
-    return exit_code    
+    return exit_code
