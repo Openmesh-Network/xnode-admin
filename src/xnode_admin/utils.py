@@ -157,9 +157,11 @@ def configure_keys(user_key, use_ssh, repo):
             pass
 
 def generate_hmac(access_token, message):
+    msg_hmac_hex = ""
+
     if isinstance(message, dict):
         print("generating hmac for dict")
-        json_str = json.dumps(message).replace(" ", "")
+        json_str = json.dumps(message).replace(", ", ",").replace(": ", ":")
     else:
         json_str = message
     if isinstance(access_token, str): # Assumes hex if string
@@ -169,5 +171,5 @@ def generate_hmac(access_token, message):
     else:
         print("Failed to generate HMAC:", access_token)
     print("Generated HMAC", msg_hmac_hex, "for message:", json_str)
-    return msg_hmac_hex        
+    return msg_hmac_hex
 
