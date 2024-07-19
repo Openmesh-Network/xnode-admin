@@ -117,10 +117,6 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                             if rebuild_success:
                                 print("Rebuild success.")
 
-                                print("Writing json file.")
-                                print("Path: ", json_path)
-                                print("Latest config: ", json.dumps(latest_config))
-                                print("Latest config response json: ", json.dumps(config_response.json()))
                                 json_file = open(json_path, "w")
                                 json_file.write(json.dumps(latest_config))
                                 json_file.close()
@@ -256,4 +252,8 @@ def rebuild_os():
     # To-Do: Add error handling for a failed nixos rebuild
     exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
     print("Rebuild exit code: ", exit_code)
-    return exit_code
+
+    if exit_code == 0:
+        return True
+    else:
+        return False
