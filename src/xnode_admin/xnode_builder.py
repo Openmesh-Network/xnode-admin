@@ -84,10 +84,15 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 if not config_response.ok:
                     print(config_response.content)
                 # Process response if one is received
+
+                latest_config = {}
+                config_updated = False
+
                 if config_response.ok:
                     json_path = state_directory+"/latest_config.json"
                     latest_config = config_response.json()
-                    if "message" in latest_config.keys():
+
+                    if "message" in latest_config.keys() and "hmac" in latest_config.keys():
                         message = latest_config["message"]
                         message_computed_hmac = generate_hmac(preshared_key, message)
                         if message_computed_hmac == latest_config["hmac"]:
@@ -97,25 +102,24 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                                 xnode_config = parsed_message["xnode_config"]
                                 config_updated = process_studio_config(xnode_config, state_directory, json_path)
                             else:
-                                print("Configuration expiry has passed")
+                                print("Configuration expiry has passed.")
                                 config_updated = False
                         else:
                             print("HMAC of configuration not verified:", message_computed_hmac, "against claimed:", latest_config["hmac"])
                             config_updated = False
+
+                        # Rebuild system if config has changed
+                        if config_updated:
+                            status_send(studio_url, xnode_uuid, preshared_key, "configuring")
+                            rebuild_success = rebuild_os()
+
+                            if rebuild_success:
+                                status_send(studio_url, xnode_uuid, preshared_key, "online")
+                                # Send online status to DPL.
+                                with open(json_path, "w") as f:
+                                    f.write(json.dumps(latest_config))
                     else:
-                        # XXX: Redundant for messages with no hmac
-                        config_updated = process_studio_config(latest_config, state_directory, json_path)
-
-                    # Rebuild system if config has changed
-                    if config_updated:
-                        status_send(studio_url, xnode_uuid, preshared_key, "configuring")
-                        rebuild_success = rebuild_os()
-
-                        if rebuild_success:
-                            status_send(studio_url, xnode_uuid, preshared_key, "online")
-                            # Send online status to DPL.
-                            with open(json_path, "w") as f:
-                                f.write(json.dumps(latest_config))
+                        print("No message in latest_config, are you missing an HMAC?")
                 else:
                     print('Request failed, status: ', config_response.status_code)
                     print(config_response.content)
@@ -177,6 +181,8 @@ def process_studio_config(studio_json_config, state_directory, json_path):
         f.write(new_sys_config)
     return True
 
+
+# DeprecationWarning
 def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type, user_key):
     repo = git.Repo(local_repo_path)
 
@@ -213,6 +219,7 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
                         # You can list the new commits if necessary
 
                         # This will print the verification result for each commit
+                        verification_output = ""
                         try:
                             verification_output = git_bin.verify_commit(remote_commit.hexsha)
                             repo.remotes.origin.pull(remote_commit.hexsha)
