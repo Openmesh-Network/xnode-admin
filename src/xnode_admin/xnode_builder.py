@@ -110,14 +110,23 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
                         # Rebuild system if config has changed
                         if config_updated:
+                            print("Sending configurint status")
                             status_send(studio_url, xnode_uuid, preshared_key, "configuring")
                             rebuild_success = rebuild_os()
 
                             if rebuild_success:
+                                print("Rebuild success.")
+
+                                print("Writing json file.")
+                                print("Path: ", json_path)
+                                print("Latest config: ", json.dumps(latest_config))
+                                print("Latest config response json: ", json.dumps(config_response.json()))
+                                json_file = open(json_path, "w")
+                                json_file.write(json.dumps(latest_config))
+                                json_file.close()
+
+                                print("Sending online status.")
                                 status_send(studio_url, xnode_uuid, preshared_key, "online")
-                                # Send online status to DPL.
-                                with open(json_path, "w") as f:
-                                    f.write(json.dumps(latest_config))
                     else:
                         print("No message in latest_config, are you missing an HMAC?")
                 else:
