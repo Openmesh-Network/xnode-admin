@@ -4,6 +4,7 @@ import psutil
 import requests
 import time
 import git
+import subprocess
 from xnode_admin.utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
 import base64
 
@@ -31,10 +32,12 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # Push a heartbeat with metrics to the studio and pull a configuration.
     hearbeat_interval = 15 # Heartbeat interval in seconds
+    update_interval = 60 * 60 * 12
     last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
+    update_check_timer = time.time() - 
 
     while True:
         # Collect metrics
@@ -78,7 +81,9 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             get_config_headers = {
                 'x-parse-session-token': get_config_hmac
             }
+
             print('Fetching update message at', time.time())
+
             try:
                 config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
                 if not config_response.ok:
@@ -112,7 +117,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         if config_updated:
                             print("Sending configurint status")
                             status_send(studio_url, xnode_uuid, preshared_key, "configuring")
-                            rebuild_success = rebuild_os()
+                            rebuild_success = os_rebuild()
 
                             if rebuild_success:
                                 print("Rebuild success.")
@@ -135,6 +140,18 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             cpu_usage_list = []
             mem_usage_list = []
             last_checked = time.time()
+
+        if update_check_timer + update_interval < time.time():
+            print('Checking for updates...')
+
+            if os_update_check():
+                print('Update found.')
+                # Heartbeat should now include wants update flag.
+                pass
+            else:
+                print('No updates.')
+
+            update_check_timer = time.time()
 
         precision = 1 # (seconds) Increase to trade performance for metric precision
         time.sleep(precision)
@@ -229,7 +246,7 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
                             verification_output = git_bin.verify_commit(remote_commit.hexsha)
                             repo.remotes.origin.pull(remote_commit.hexsha)
                             print("Commit was verified and pulled.", verification_output)
-                            rebuild_os()
+                            os_rebuild()
 
                         except git.GitCommandError as e:
                             print(verification_output)
@@ -246,10 +263,32 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
         last_checked = time.time()
 
 
+def os_channel(update_or_rollback: bool):
+    # Update the channel.
+    argument = ""
+    if update_or_rollback:
+        argument = "--update"
+    else:
+        argument = "rollback"
 
-def rebuild_os():
+    result = subprocess.run(['/run/current-system/sw/bin/nix-channel', argument], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print('Error when running channel command.')
+        print(result.stderr)
+        return False
+    else:
+        return True
+
+def os_channel_update():
+    return os_channel(True)
+
+def os_channel_rollback():
+    return os_channel(False)
+
+def os_rebuild():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
     # To-Do: Add error handling for a failed nixos rebuild
+    print('Running rebuild')
     exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
     print("Rebuild exit code: ", exit_code)
 
@@ -257,3 +296,56 @@ def rebuild_os():
         return True
     else:
         return False
+
+
+def os_update():
+    print('Running update')
+
+    # Run channel update.
+    if not os_channel_update():
+        return False
+
+    # Just nixos rebuild.
+    return os_rebuild()
+
+def os_update_check() -> bool:
+    print('Updating channel...')
+
+    # Update the channel.
+    if not os_channel_update():
+        return False
+
+    # Run build.
+    print('Running build...')
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print('Error when running build command after channel update.')
+        print(result.stderr)
+        return False
+
+    # Diff the build to see if there's a new version.
+    print('Diffing build...')
+    result = subprocess.run(['/run/current-system/sw/bin/nix', 'store', 'diff-closures', './result', '/run/current-system'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print('Error when running diff command after build on update check.')
+        print(result.stderr)
+
+    if len(result.stdout) > 0:
+        print('Difference between new and current version, must be an update!')
+        print('Changes: ')
+        print(result.stdout)
+        print('Changes in hex: ')
+        print(result.stdout.hex())
+
+        # There is a diff, so there's an update available.
+        print('Rolling back changes in case the user wants to do a rebuild without updating.')
+        os_channel_rollback()
+
+        return True
+    else:
+        print('No difference between \"updated\" and current version')
+        print(result.stdout)
+
+        # No diff, therefore there isn't an update available
+        return False
+
