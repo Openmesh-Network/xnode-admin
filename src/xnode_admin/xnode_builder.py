@@ -20,7 +20,7 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
         'x-parse-session-token': status_hmac
     }
 
-    # Try to send a status to the studio, then pull the config
+    # Try to send a status to the studio, then pull the config.
     try:
         status_response = requests.post(studio_url + '/pushXnodeStatus', headers=status_headers, json=status_message)
         if not status_response.ok:
@@ -31,25 +31,27 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # Push a heartbeat with metrics to the studio and pull a configuration.
-    hearbeat_interval = 15 # Heartbeat interval in seconds
-    update_interval = 60 * 60 * 12
-    last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup
+    hearbeat_interval = 15 # Heartbeat interval in seconds.
+    update_interval = 60 * 60 * 2 # Check for update once few hours.
+    last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
-    update_check_timer = time.time() - 
+    update_check_timer = time.time() + update_interval
+
+    wants_update = False
 
     while True:
-        # Collect metrics
+        # Collect metrics.
         cpu_usage_list.append(psutil.cpu_percent())
         mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
 
         # If the interval has passed since the last check then fetch from the studio.
         if last_checked + hearbeat_interval < time.time():
-            # Calculate metrics (average and maximum)
+            # Calculate metrics (average and maximum).
             avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
-            disk = psutil.disk_usage('/') # Only gets disk usage from root
+            disk = psutil.disk_usage('/') # Only gets disk usage from root.
             heartbeat_message = {
                 "id": str(xnode_uuid),
                 "cpuPercent": (avg_cpu_usage),
@@ -61,12 +63,16 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 "storageMbUsed":  (disk.used / (1024 * 1024)),
                 "storageMbTotal": (disk.total / (1024 * 1024)),
             }
+
+            if wants_update:
+                heartbeat_message["wantsUpdate"] = True
+
             heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
             heartbeat_headers = {
                 'x-parse-session-token': heartbeat_hmac
             }
 
-            # Try to send a heartbeat to the studio, then pull the config
+            # Try to send a heartbeat to the studio, then pull the config.
             try:
                 heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
                 if not heartbeat_response.ok:
@@ -87,8 +93,8 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             try:
                 config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
                 if not config_response.ok:
+                    print('Config response invalid!')
                     print(config_response.content)
-                # Process response if one is received
 
                 latest_config = {}
                 config_updated = False
@@ -141,13 +147,15 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             mem_usage_list = []
             last_checked = time.time()
 
-        if update_check_timer + update_interval < time.time():
+        # Only check for updates if we know we don't already have any updates queued up.
+        if (update_check_timer + update_interval < time.time()) and not wants_update:
             print('Checking for updates...')
 
             if os_update_check():
                 print('Update found.')
+
                 # Heartbeat should now include wants update flag.
-                pass
+                wants_update = True
             else:
                 print('No updates.')
 
