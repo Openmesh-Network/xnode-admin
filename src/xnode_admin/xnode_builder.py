@@ -29,89 +29,181 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
     except requests.exceptions.RequestException as e:
         print(e)
 
-# Returns true on the first case and the current generation on the other.
-def check_update_generation(studio_url, xnode_uuid, preshared_key) -> tuple[bool, int]:
-    check_update_message = {
+# Gets the configuration from the dpl, also checks hmac for integrity.
+def config_get(studio_url, xnode_uuid, preshared_key):
+    get_config_message = {
         "id": str(xnode_uuid),
     }
-    check_update_hmac = generate_hmac(preshared_key, check_update_message)
-    check_update_headers = {
+    get_config_hmac = generate_hmac(preshared_key, get_config_message)
+    get_config_headers = {
+        'x-parse-session-token': get_config_hmac
+    }
+
+    print('Fetching update message at', time.time())
+
+    try:
+        config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
+
+        if config_response.ok:
+
+            config = config_response.json()
+
+            if "message" in config.keys() and "hmac" in config.keys():
+                message = config["message"]
+                message_computed_hmac = generate_hmac(preshared_key, message)
+                if message_computed_hmac == config["hmac"]:
+                    print("HMAC of configuration verified")
+                    parsed_message = json.loads(message)
+
+                    if parsed_message["expiry"] > time.time()*1000:
+                        parsed_config = parsed_message["xnode_config"]
+                        return parsed_config
+                    else:
+                        print("Configuration expiry has passed.")
+                        return None
+                else:
+                    print("HMAC of configuration not verified:", message_computed_hmac, "against claimed:", config["hmac"])
+                    return None
+        else:
+            print('Config response failed!')
+            print(config_response.content)
+            return None
+    except Exception as e:
+        print('Couldn\'t get config response, reason: ')
+        print(e)
+        return None
+
+# Returns true on the first case and the current generation on the other.
+# Returns map with "configWant", "configHave", "updateWant", "updateHave":
+def check_generation(studio_url, xnode_uuid, preshared_key):
+    check_generation_message = {
+        "id": str(xnode_uuid),
+    }
+    check_update_hmac = generate_hmac(preshared_key, check_generation_message)
+    check_generation_headers = {
         'x-parse-session-token': check_update_hmac
     }
 
-    # Get the wanted and applied versions
-    # If they aren't equal, return true.
     try:
-        check_update_response = requests.post(studio_url + '/getXnodeUpdate', headers=check_update_headers, json=check_update_message)
+        check_update_response = requests.post(studio_url + '/getXnodeGeneration', headers=check_generation_headers, json=check_generation_message)
         if check_update_response.ok:
-            print(check_update_response.content)
-
             content = check_update_response.json()
-            if 'want' in content and 'have' in content:
-                if content['want'] != content['have']:
-                    return (True, int(content['have']))
-                else:
-                    return (False, -1)
-            else:
-                print('Failed to get update. Resonse: ')
-                print(content)
 
-                return (False, -1)
+            if "configWant" in content and "configHave" in content and "updateWant" in content and "updateHave" in content:
+                print("Got the generation values.")
+                return content
+            else:
+                print("Generation not in expected format! Is the admin service out of date?")
+                return None
         else:
             print('Error in check update request')
             print(check_update_response)
-            return (False, -1)
+            return None
     except Exception as e:
         print('Failed to check update.')
         print(e)
-        return (False, -1)
+        return None
 
-def push_update_generation(studio_url, xnode_uuid, preshared_key, generation: int):
-    push_update_message = {
+def push_generation(studio_url, xnode_uuid, preshared_key, generation: int, is_config: bool):
+    push_message = {
         "id": str(xnode_uuid),
         "generation": int(generation)
     }
-    push_update_hmac = generate_hmac(preshared_key, push_update_message)
-    push_update_headers = {
-        'x-parse-session-token': push_update_hmac
+    push_hmac = generate_hmac(preshared_key, push_message)
+    push_headers = {
+        'x-parse-session-token': push_hmac
     }
 
     try:
-        check_update_response = requests.post(studio_url + '/pushXnodeUpdate', headers=push_update_headers, json=push_update_message)
-        if not check_update_response.ok:
-            print('Failed to push update request to dpl.')
-            print(check_update_response.content)
+        endpoint = ""
+        if (is_config):
+            endpoint = "/pushXnodeGenerationConfig"
+        else:
+            endpoint = "/pushXnodeGenerationUpdate"
+
+        push_response = requests.post(studio_url + endpoint, headers=push_headers, json=push_message)
+        if not push_response.ok:
+            print('Failed to push generation request to dpl.')
+            print(push_response.content)
             return False
         else:
             return True
     except Exception as e:
-        print('Failed to push update.')
+        print('Failed to push generation.')
         print(e)
         return False
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # Push a heartbeat with metrics to the studio and pull a configuration.
-    hearbeat_interval = 15 # Heartbeat interval in seconds.
-    update_interval = 1 # Check for update once few hours.
-    can_update_interval = 10000 # Check if dpl has allowed update.
-    last_checked = time.time() + hearbeat_interval # Eligible to search immediately on startup.
+    hearbeat_interval = 30 # Heartbeat interval in seconds.
+    generation_interval = 10 # API call to dpl to check if there's a new config or a new update.
+    update_interval = 10000 # How often to check if there's an update on the current channel.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
+    generation_timer = time.time() + generation_interval
+    heartbeat_timer = time.time() + hearbeat_interval
     update_check_timer = time.time() + update_interval
-    can_update_timer = time.time() + can_update_interval
 
     wants_update = False
+    status_send(studio_url, xnode_uuid, preshared_key, "started")
 
     while True:
         # Collect metrics.
         cpu_usage_list.append(psutil.cpu_percent())
         mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
 
-        # If the interval has passed since the last check then fetch from the studio.
-        if last_checked + hearbeat_interval < time.time():
-            print('Heartbeat sending.')
+        # Check for changes in generation values. If they're mismatched, we have to reconfigure the system.
+        if generation_timer + generation_interval < time.time():
+            generation_data = check_generation(studio_url, xnode_uuid, preshared_key)
+
+            if generation_data != None:
+
+                configWant = int(generation_data["configWant"])
+                configHave = int(generation_data["configHave"])
+                updateWant = int(generation_data["updateWant"])
+                updateHave = int(generation_data["updateHave"])
+
+                if updateWant > updateHave:
+                    print('Update want and have don\'t match, updating system.')
+
+                    print('Sending push update request to dpl.')
+                    success = push_generation(studio_url, xnode_uuid, preshared_key, updateHave + 1, False)
+                    if not success:
+                        print('Failed to push update.')
+                    else:
+                        print('Updating machine...')
+                        status_send(studio_url, xnode_uuid, preshared_key, "updating")
+                        os_update()
+                        status_send(studio_url, xnode_uuid, preshared_key, "online")
+                        print('Updated machine!')
+
+                if configWant > configHave:
+                    print('Config want and have don\'t match, must reconfigure.')
+                    config = config_get(studio_url, xnode_uuid, preshared_key)
+
+                    if config != None:
+                        process_studio_config(config, state_directory)
+
+                        print("Sending configuring status")
+                        status_send(studio_url, xnode_uuid, preshared_key, "configuring")
+                        success = push_generation(studio_url, xnode_uuid, preshared_key, configHave + 1, True)
+                        rebuild_success = os_rebuild()
+
+                        if rebuild_success:
+                            print("Sending online status.")
+                            status_send(studio_url, xnode_uuid, preshared_key, "online")
+                    else:
+                        print('Couldn\'t fetch valid configuration from dpl.')
+            else:
+                print('No generation data, is the dpl down or is the admin service out of date?')
+
+            generation_timer = time.time()
+
+        if heartbeat_timer + hearbeat_interval < time.time():
+            print('Sending heartbeat.')
+
             # Calculate metrics (average and maximum).
             avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
@@ -144,92 +236,11 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             except requests.exceptions.RequestException as e:
                 print(e)
 
-            get_config_message = {
-                "id": str(xnode_uuid),
-            }
-            get_config_hmac = generate_hmac(preshared_key, get_config_message)
-            get_config_headers = {
-                'x-parse-session-token': get_config_hmac
-            }
+            heartbeat_timer = time.time()
 
-            print('Fetching update message at', time.time())
-
-            try:
-                config_response = requests.get(studio_url + '/getXnodeServices', headers=get_config_headers, json=get_config_message)
-                if not config_response.ok:
-                    print('Config response invalid!')
-                    print(config_response.content)
-
-                latest_config = {}
-                config_updated = False
-
-                if config_response.ok:
-                    json_path = state_directory+"/latest_config.json"
-                    latest_config = config_response.json()
-
-                    if "message" in latest_config.keys() and "hmac" in latest_config.keys():
-                        message = latest_config["message"]
-                        message_computed_hmac = generate_hmac(preshared_key, message)
-                        if message_computed_hmac == latest_config["hmac"]:
-                            print("HMAC of configuration verified")
-                            parsed_message = json.loads(message)
-                            if parsed_message["expiry"] > time.time()*1000:
-                                xnode_config = parsed_message["xnode_config"]
-                                config_updated = process_studio_config(xnode_config, state_directory, json_path)
-                            else:
-                                print("Configuration expiry has passed.")
-                                config_updated = False
-                        else:
-                            print("HMAC of configuration not verified:", message_computed_hmac, "against claimed:", latest_config["hmac"])
-                            config_updated = False
-
-                        # Rebuild system if config has changed.
-                        if config_updated:
-                            print("Sending configuring status")
-                            status_send(studio_url, xnode_uuid, preshared_key, "configuring")
-                            rebuild_success = os_rebuild()
-
-                            if rebuild_success:
-                                print("Rebuild success.")
-
-                                json_file = open(json_path, "w")
-                                json_file.write(json.dumps(latest_config))
-                                json_file.close()
-
-                                print("Sending online status.")
-                                status_send(studio_url, xnode_uuid, preshared_key, "online")
-                    else:
-                        print("No message in latest_config, are you missing an HMAC?")
-                else:
-                    print('Request failed, status: ', config_response.status_code)
-                    print(config_response.content)
-            except requests.exceptions.RequestException as e:
-                print(e)
-
-            # Reset last_checked and empty the lists.
+            # Reset these lists, don't want to run out of memory
             cpu_usage_list = []
             mem_usage_list = []
-            last_checked = time.time()
-
-        if can_update_timer + can_update_interval < time.time():
-            should_update, last_applied_generation = check_update_generation(studio_url, xnode_uuid, preshared_key)
-            if should_update:
-                print('Should update, updating machine.')
-                print('Sending push update request to dpl.')
-
-                success = push_update_generation(studio_url, xnode_uuid, preshared_key, last_applied_generation + 1)
-                if not success:
-                    print('Failed to push update.')
-                else:
-                    print('Updating machine...')
-                    status_send(studio_url, xnode_uuid, preshared_key, "updating")
-                    os_update()
-
-                    time.sleep(10)
-                    status_send(studio_url, xnode_uuid, preshared_key, "online")
-                    print('Updated machine!')
-
-            can_update_timer = time.time()
 
         # Only check for updates if we know we don't already have any updates queued up.
         if (update_check_timer + update_interval < time.time()) and not wants_update:
@@ -248,26 +259,12 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
         precision = 1 # (seconds) Increase to trade performance for metric precision
         time.sleep(precision)
 
-def process_studio_config(studio_json_config, state_directory, json_path):
-    # 1 Check if config has changed since last rebuild
+def process_studio_config(studio_json_config, state_directory):
+    # 1 Get config path.
     config_path = state_directory+"/config.nix"
-    if not os.path.isfile(json_path):
-        with open(json_path, "w") as f:
-            last_config = "{}"
-            f.write(last_config)
-            print("Created empty config at", json_path)
-    else:
-        with open(json_path, "r") as f:
-            last_config = json.load(f)
-
-    print('Last config:')
-    print(last_config)
 
     print('Studio json config:')
     print(studio_json_config)
-
-    if last_config == studio_json_config:
-        return False # Same config as last saved.
 
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{\n  "
@@ -291,7 +288,7 @@ def process_studio_config(studio_json_config, state_directory, json_path):
         for module in studio_json_config:
             module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
             for option in module["options"]:
-                module_config += "  " + str(option["nixName"]) + " = " + parse_nix_primitive(option["type"], option["value"]) + ";\n  "
+                module_config += "  " + str(option["nixName"]) + " = " + str(parse_nix_primitive(option["type"], option["value"])) + ";\n  "
             new_sys_config += module_config + "};"
     new_sys_config += "\n}"
     print(new_sys_config)
@@ -299,7 +296,6 @@ def process_studio_config(studio_json_config, state_directory, json_path):
     # 3 Write the new config to the .nix file
     with open(config_path, "w") as f:
         f.write(new_sys_config)
-    return True
 
 
 # DeprecationWarning
