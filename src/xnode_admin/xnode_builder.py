@@ -418,7 +418,7 @@ def os_update_check() -> bool:
 
     # Run build.
     print('Running build...')
-    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos', 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print('Error when running build command after channel update.')
         print(result.stderr)
