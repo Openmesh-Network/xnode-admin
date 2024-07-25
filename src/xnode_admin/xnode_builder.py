@@ -237,7 +237,6 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
             generation_timer = time.time()
 
-        print("Considering sending heartbeat: ", heartbeat_timer + hearbeat_interval, time.time())
         if heartbeat_timer + hearbeat_interval < time.time():
             print('Sending heartbeat.')
 
