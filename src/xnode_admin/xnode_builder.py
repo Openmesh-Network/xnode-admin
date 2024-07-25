@@ -29,6 +29,39 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
     except requests.exceptions.RequestException as e:
         print(e)
 
+def heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update: bool):
+    # Calculate metrics (average and maximum).
+    avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
+
+    disk = psutil.disk_usage('/') # Only gets disk usage from root.
+    heartbeat_message = {
+        "id": str(xnode_uuid),
+        "cpuPercent": (avg_cpu_usage),
+        "cpuPercentPeek": (highest_cpu_usage),
+        "ramMbUsed": (avg_mem_usage),
+        "ramMbPeek": (highest_mem_usage),
+        "ramMbTotal": (psutil.virtual_memory().total / (1024 * 1024)),
+
+        "storageMbUsed":  (disk.used / (1024 * 1024)),
+        "storageMbTotal": (disk.total / (1024 * 1024)),
+    }
+
+    if wants_update:
+        heartbeat_message["wantUpdate"] = True
+
+    heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
+    heartbeat_headers = {
+        'x-parse-session-token': heartbeat_hmac
+    }
+
+    # Try to send a heartbeat to the studio, then pull the config.
+    try:
+        heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
+        if not heartbeat_response.ok:
+            print(heartbeat_response.content)
+    except requests.exceptions.RequestException as e:
+        print(e)
+
 # Gets the configuration from the dpl, also checks hmac for integrity.
 def config_get(studio_url, xnode_uuid, preshared_key):
     get_config_message = {
@@ -138,11 +171,12 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Push a heartbeat with metrics to the studio and pull a configuration.
     hearbeat_interval = 30 # Heartbeat interval in seconds.
     generation_interval = 10 # API call to dpl to check if there's a new config or a new update.
-    update_interval = 10000 # How often to check if there's an update on the current channel.
+    # XXX: Increase this interval to once every few hours, because it blocks for ~30 seconds in the best case.
+    update_interval = 100 # How often to check if there's an update on the current channel.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
-    generation_timer = time.time() + generation_interval
+    generation_timer = time.time() - generation_interval # Start by checking generation.
     heartbeat_timer = time.time() + hearbeat_interval
     update_check_timer = time.time() + update_interval
 
@@ -178,6 +212,8 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         os_update()
                         status_send(studio_url, xnode_uuid, preshared_key, "online")
                         print('Updated machine!')
+                        wants_update = False
+                        heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
 
                 if configWant > configHave:
                     print('Config want and have don\'t match, must reconfigure.')
@@ -201,40 +237,11 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
             generation_timer = time.time()
 
+        print("Considering sending heartbeat: ", heartbeat_timer + hearbeat_interval, time.time())
         if heartbeat_timer + hearbeat_interval < time.time():
             print('Sending heartbeat.')
 
-            # Calculate metrics (average and maximum).
-            avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
-
-            disk = psutil.disk_usage('/') # Only gets disk usage from root.
-            heartbeat_message = {
-                "id": str(xnode_uuid),
-                "cpuPercent": (avg_cpu_usage),
-                "cpuPercentPeek": (highest_cpu_usage),
-                "ramMbUsed": (avg_mem_usage),
-                "ramMbPeek": (highest_mem_usage),
-                "ramMbTotal": (psutil.virtual_memory().total / (1024 * 1024)),
-
-                "storageMbUsed":  (disk.used / (1024 * 1024)),
-                "storageMbTotal": (disk.total / (1024 * 1024)),
-            }
-
-            if wants_update:
-                heartbeat_message["wantUpdate"] = True
-
-            heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
-            heartbeat_headers = {
-                'x-parse-session-token': heartbeat_hmac
-            }
-
-            # Try to send a heartbeat to the studio, then pull the config.
-            try:
-                heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
-                if not heartbeat_response.ok:
-                    print(heartbeat_response.content)
-            except requests.exceptions.RequestException as e:
-                print(e)
+            heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
 
             heartbeat_timer = time.time()
 
