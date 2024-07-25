@@ -24,20 +24,83 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
     try:
         status_response = requests.post(studio_url + '/pushXnodeStatus', headers=status_headers, json=status_message)
         if not status_response.ok:
+            print('Error sending status to dpl')
             print(status_response.content)
     except requests.exceptions.RequestException as e:
         print(e)
+
+# Returns true on the first case and the current generation on the other.
+def check_update_generation(studio_url, xnode_uuid, preshared_key) -> tuple[bool, int]:
+    check_update_message = {
+        "id": str(xnode_uuid),
+    }
+    check_update_hmac = generate_hmac(preshared_key, check_update_message)
+    check_update_headers = {
+        'x-parse-session-token': check_update_hmac
+    }
+
+    # Get the wanted and applied versions
+    # If they aren't equal, return true.
+    try:
+        check_update_response = requests.post(studio_url + '/getXnodeUpdate', headers=check_update_headers, json=check_update_message)
+        if check_update_response.ok:
+            print(check_update_response.content)
+
+            content = check_update_response.json()
+            if 'want' in content and 'have' in content:
+                if content['want'] != content['have']:
+                    return (True, int(content['have']))
+                else:
+                    return (False, -1)
+            else:
+                print('Failed to get update. Resonse: ')
+                print(content)
+
+                return (False, -1)
+        else:
+            print('Error in check update request')
+            print(check_update_response)
+            return (False, -1)
+    except Exception as e:
+        print('Failed to check update.')
+        print(e)
+        return (False, -1)
+
+def push_update_generation(studio_url, xnode_uuid, preshared_key, generation: int):
+    push_update_message = {
+        "id": str(xnode_uuid),
+        "generation": int(generation)
+    }
+    push_update_hmac = generate_hmac(preshared_key, push_update_message)
+    push_update_headers = {
+        'x-parse-session-token': push_update_hmac
+    }
+
+    try:
+        check_update_response = requests.post(studio_url + '/pushXnodeUpdate', headers=push_update_headers, json=push_update_message)
+        if not check_update_response.ok:
+            print('Failed to push update request to dpl.')
+            print(check_update_response.content)
+            return False
+        else:
+            return True
+    except Exception as e:
+        print('Failed to push update.')
+        print(e)
+        return False
 
 def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # Push a heartbeat with metrics to the studio and pull a configuration.
     hearbeat_interval = 15 # Heartbeat interval in seconds.
-    update_interval = 60 * 60 * 2 # Check for update once few hours.
-    last_checked = time.time() - hearbeat_interval # Eligible to search immediately on startup.
+    update_interval = 1 # Check for update once few hours.
+    can_update_interval = 10000 # Check if dpl has allowed update.
+    last_checked = time.time() + hearbeat_interval # Eligible to search immediately on startup.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
     update_check_timer = time.time() + update_interval
+    can_update_timer = time.time() + can_update_interval
 
     wants_update = False
 
@@ -48,6 +111,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
         # If the interval has passed since the last check then fetch from the studio.
         if last_checked + hearbeat_interval < time.time():
+            print('Heartbeat sending.')
             # Calculate metrics (average and maximum).
             avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage = calculate_metrics(cpu_usage_list, mem_usage_list)
 
@@ -65,7 +129,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             }
 
             if wants_update:
-                heartbeat_message["wantsUpdate"] = True
+                heartbeat_message["wantUpdate"] = True
 
             heartbeat_hmac = generate_hmac(preshared_key, heartbeat_message)
             heartbeat_headers = {
@@ -119,9 +183,9 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                             print("HMAC of configuration not verified:", message_computed_hmac, "against claimed:", latest_config["hmac"])
                             config_updated = False
 
-                        # Rebuild system if config has changed
+                        # Rebuild system if config has changed.
                         if config_updated:
-                            print("Sending configurint status")
+                            print("Sending configuring status")
                             status_send(studio_url, xnode_uuid, preshared_key, "configuring")
                             rebuild_success = os_rebuild()
 
@@ -142,10 +206,30 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             except requests.exceptions.RequestException as e:
                 print(e)
 
-            # Reset last_checked and empty the lists
+            # Reset last_checked and empty the lists.
             cpu_usage_list = []
             mem_usage_list = []
             last_checked = time.time()
+
+        if can_update_timer + can_update_interval < time.time():
+            should_update, last_applied_generation = check_update_generation(studio_url, xnode_uuid, preshared_key)
+            if should_update:
+                print('Should update, updating machine.')
+                print('Sending push update request to dpl.')
+
+                success = push_update_generation(studio_url, xnode_uuid, preshared_key, last_applied_generation + 1)
+                if not success:
+                    print('Failed to push update.')
+                else:
+                    print('Updating machine...')
+                    status_send(studio_url, xnode_uuid, preshared_key, "updating")
+                    os_update()
+
+                    time.sleep(10)
+                    status_send(studio_url, xnode_uuid, preshared_key, "online")
+                    print('Updated machine!')
+
+            can_update_timer = time.time()
 
         # Only check for updates if we know we don't already have any updates queued up.
         if (update_check_timer + update_interval < time.time()) and not wants_update:
@@ -175,6 +259,12 @@ def process_studio_config(studio_json_config, state_directory, json_path):
     else:
         with open(json_path, "r") as f:
             last_config = json.load(f)
+
+    print('Last config:')
+    print(last_config)
+
+    print('Studio json config:')
+    print(studio_json_config)
 
     if last_config == studio_json_config:
         return False # Same config as last saved.
@@ -246,9 +336,9 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
 
                     if local_commit.hexsha != remote_commit.hexsha:
                         print("New commits are available on the remote master branch.")
-                        # You can list the new commits if necessary
+                        # You can list the new commits if necessary.
 
-                        # This will print the verification result for each commit
+                        # This will print the verification result for each commit.
                         verification_output = ""
                         try:
                             verification_output = git_bin.verify_commit(remote_commit.hexsha)
