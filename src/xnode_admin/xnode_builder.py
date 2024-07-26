@@ -393,6 +393,10 @@ def os_rebuild():
         print("Rebuilt succesfully, log:")
         print(result.stdout)
         print(result.stderr)
+
+        # Clean garbage:
+        result = subprocess.run(['/run/current-system/sw/bin/nix-store', '--gc'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
         return True
     else:
         print("Rebuild failure, log:")
