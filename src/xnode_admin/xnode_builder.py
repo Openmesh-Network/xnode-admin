@@ -59,6 +59,8 @@ def heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_us
         heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
         if not heartbeat_response.ok:
             print(heartbeat_response.content)
+        else:
+            print("Succesfully sent heartbeat.")
     except requests.exceptions.RequestException as e:
         print(e)
 
@@ -181,7 +183,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     update_check_timer = time.time() + update_interval
 
     wants_update = False
-    status_send(studio_url, xnode_uuid, preshared_key, "started")
+    status_send(studio_url, xnode_uuid, preshared_key, "online")
 
     while True:
         # Collect metrics.
@@ -209,6 +211,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                     else:
                         print('Updating machine...')
                         status_send(studio_url, xnode_uuid, preshared_key, "updating")
+
                         os_update()
                         status_send(studio_url, xnode_uuid, preshared_key, "online")
                         print('Updated machine!')
@@ -369,7 +372,7 @@ def os_channel(update_or_rollback: bool):
     if update_or_rollback:
         argument = "--update"
     else:
-        argument = "rollback"
+        argument = "--rollback"
 
     result = subprocess.run(['/run/current-system/sw/bin/nix-channel', argument], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
@@ -387,7 +390,7 @@ def os_channel_rollback():
 
 def os_rebuild():
     # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
-    # To-Do: Add error handling for a failed nixos rebuild
+    # To-Do: Add error handling for a failed nixos rebuild.
     print('Running rebuild')
     exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
     print("Rebuild exit code: ", exit_code)
