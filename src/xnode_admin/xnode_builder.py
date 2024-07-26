@@ -174,13 +174,13 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     hearbeat_interval = 30 # Heartbeat interval in seconds.
     generation_interval = 10 # API call to dpl to check if there's a new config or a new update.
     # XXX: Increase this interval to once every few hours, because it blocks for ~30 seconds in the best case.
-    update_interval = 120 # How often to check if there's an update on the current channel.
+    update_check_interval = 120 # How often to check if there's an update on the current channel.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
     generation_timer = time.time() - generation_interval # Start by checking generation.
     heartbeat_timer = time.time() + hearbeat_interval
-    update_check_timer = time.time() + update_interval
+    update_check_timer = time.time() + update_check_interval
 
     wants_update = False
     status_send(studio_url, xnode_uuid, preshared_key, "online")
@@ -247,21 +247,26 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
             heartbeat_timer = time.time()
 
-            # Reset these lists, don't want to run out of memory
+            # Reset these lists, don't want to run out of memory.
             cpu_usage_list = []
             mem_usage_list = []
 
         # Only check for updates if we know we don't already have any updates queued up.
-        if (update_check_timer + update_interval < time.time()) and not wants_update:
+        if (update_check_timer + update_check_interval < time.time()) and not wants_update:
             print('Checking for updates...')
 
+            status_send(studio_url, xnode_uuid, preshared_key, "checking updates")
             if os_update_check():
                 print('Update found.')
 
                 # Heartbeat should now include wants update flag.
                 wants_update = True
+
+                status_send(studio_url, xnode_uuid, preshared_key, "online")
+                heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
             else:
                 print('No updates.')
+                status_send(studio_url, xnode_uuid, preshared_key, "online")
 
             update_check_timer = time.time()
 
@@ -277,28 +282,19 @@ def process_studio_config(studio_json_config, state_directory):
 
     # 2 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{\n  "
-    if "services" in studio_json_config:
-        print("Ran using api v0.2")
-        for module_config in studio_json_config:
-            # config_type eg. services, users or networking
-            print(studio_json_config[module_config]) # services
-            new_sys_config += module_config + " = {\n  "
-            for submodule in studio_json_config[module_config]:
-                print("______________")
-                if "nixName" in submodule.keys():
-                    print("Parsing nix config for", submodule["nixName"])
-                    new_sys_config += parse_nix_json(submodule)
-                else:
-                    print("No nixName found in:", submodule)
+    for module_config in studio_json_config:
+        # config_type eg. services, users or networking
+        print(studio_json_config[module_config]) # services
+        new_sys_config += module_config + " = {\n  "
+        for submodule in studio_json_config[module_config]:
+            print("______________")
+            if "nixName" in submodule.keys():
+                print("Parsing nix config for", submodule["nixName"])
+                new_sys_config += parse_nix_json(submodule)
+            else:
+                print("No nixName found in:", submodule)
 
-            new_sys_config += "};\n"
-    else: # Otherwise assume all items are services (v0.1)
-        print("Ran using api v0.1")
-        for module in studio_json_config:
-            module_config = "\n  services." + str(module["nixName"]) + " = {\n  "
-            for option in module["options"]:
-                module_config += "  " + str(option["nixName"]) + " = " + str(parse_nix_primitive(option["type"], option["value"])) + ";\n  "
-            new_sys_config += module_config + "};"
+        new_sys_config += "};\n"
     new_sys_config += "\n}"
     print(new_sys_config)
 
