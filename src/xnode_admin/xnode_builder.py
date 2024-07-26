@@ -214,10 +214,10 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         status_send(studio_url, xnode_uuid, preshared_key, "updating")
 
                         os_update()
-                        status_send(studio_url, xnode_uuid, preshared_key, "online")
                         print('Updated machine!')
                         wants_update = False
                         heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
+                        status_send(studio_url, xnode_uuid, preshared_key, "online")
 
                 if configWant > configHave:
                     print('Config want and have don\'t match, must reconfigure.')
@@ -312,6 +312,7 @@ def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type
     # If applicable, add the key to the repo's git config for commit verification
     configure_keys(user_key, key_type, repo)
     git_bin = repo.git
+
     # If there is no git repository at the local path, clone it.
     if not os.path.exists(local_repo_path):
         try:
