@@ -265,7 +265,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
             update_check_timer = time.time()
 
-        precision = 1 # (seconds) Increase to trade performance for metric precision
+        precision = 1 # (seconds) Increase to trade performance for metric precision.
         time.sleep(precision)
 
 def process_studio_config(studio_json_config, state_directory):
@@ -389,15 +389,18 @@ def os_channel_rollback():
     return os_channel(False)
 
 def os_rebuild():
-    # To-Do: Return errors to Xnode Studio, possibly by pushing error logs to the git repo.
-    # To-Do: Add error handling for a failed nixos rebuild.
     print('Running rebuild')
-    exit_code = os.system("/run/current-system/sw/bin/nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix -I nixpkgs=/root/.nix-defexpr/channels/nixos")
-    print("Rebuild exit code: ", exit_code)
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', 'switch', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    if exit_code == 0:
+    if result.returncode == 0:
+        print("Rebuilt succesfully, log:")
+        print(result.stdout)
+        print(result.stderr)
         return True
     else:
+        print("Rebuild failure, log:")
+        print(result.stdout)
+        print(result.stderr)
         return False
 
 

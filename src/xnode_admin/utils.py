@@ -34,7 +34,7 @@ def parse_all_args():
             for param in kernel_parameters:
                 if param.startswith("XNODE_UUID="):
                     args.uuid = param.split('XNODE_UUID=')[1]
-                    
+
                 if param.startswith("XNODE_ACCESS_TOKEN="):
                     args.access_token = param.split('XNODE_ACCESS_TOKEN=')[1]
 
