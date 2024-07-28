@@ -4,6 +4,7 @@ import psutil
 import requests
 import time
 import git
+import shutil
 import subprocess
 from xnode_admin.utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
 import base64
@@ -217,6 +218,10 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         print('Updated machine!')
                         wants_update = False
                         heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
+
+                        # Adding a tiny delay to make sure want_update is set to false on the frontend before online is set to true.
+                        # Otherwise the update banner will pop up for a brief second.
+                        time.sleep(.1)
                         status_send(studio_url, xnode_uuid, preshared_key, "online")
 
                 if configWant > configHave:
@@ -263,8 +268,8 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                 # Heartbeat should now include wants update flag.
                 wants_update = True
 
-                status_send(studio_url, xnode_uuid, preshared_key, "online")
                 heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
+                status_send(studio_url, xnode_uuid, preshared_key, "online")
             else:
                 print('No updates.')
                 status_send(studio_url, xnode_uuid, preshared_key, "online")
@@ -418,6 +423,16 @@ def os_update():
 
 def os_update_check() -> bool:
     print('Updating channel...')
+
+    # Remove the /root/.cache/nix directory
+    # Otherwise Nix will just cache the tar file and not redownload it!
+    try:
+        print('Deleting Nix cache directory...')
+        shutil.rmtree("/root/.cache/nix")
+        print('Success! Or no exceptions at least.')
+    except Exception as e:
+        print('Failed to delete directory. Error: ')
+        print(e)
 
     # Update the channel.
     if not os_channel_update():
