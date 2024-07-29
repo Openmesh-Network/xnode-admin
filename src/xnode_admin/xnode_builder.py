@@ -221,10 +221,10 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         print('Updating machine...')
                         status_send(studio_url, xnode_uuid, preshared_key, "updating")
 
-                        # Might restart service at this point!
                         wants_update = False
                         heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
 
+                        # WARN: Might restart this program at this point!
                         if os_update():
                             print('Succesfully updated machine!')
                         else:
