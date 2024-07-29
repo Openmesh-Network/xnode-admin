@@ -3,7 +3,6 @@ import os
 import psutil
 import requests
 import time
-import git
 import shutil
 import subprocess
 from xnode_admin.utils import calculate_metrics, parse_nix_json, configure_keys, generate_hmac
@@ -246,10 +245,15 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         print("Sending configuring status")
                         status_send(studio_url, xnode_uuid, preshared_key, "configuring")
                         success = push_generation(studio_url, xnode_uuid, preshared_key, configHave + 1, True)
+
+                        # WARN: This could restart the machine.
                         rebuild_success = os_rebuild()
 
                         if rebuild_success:
-                            print("Sending online status.")
+                            print("Configuration succeeded. Sending online status.")
+                            status_send(studio_url, xnode_uuid, preshared_key, "online")
+                        else:
+                            print("Configuration failed. Reverting!")
                             status_send(studio_url, xnode_uuid, preshared_key, "online")
                     else:
                         print('Couldn\'t fetch valid configuration from dpl.')
@@ -319,66 +323,6 @@ def process_studio_config(studio_json_config, state_directory):
     # 3 Write the new config to the .nix file
     with open(config_path, "w") as f:
         f.write(new_sys_config)
-
-
-# DeprecationWarning
-def fetch_config_git(local_repo_path, remote_repo_path, fetch_interval, key_type, user_key):
-    repo = git.Repo(local_repo_path)
-
-    # Configure git signing keys if applicable
-    # If applicable, add the key to the repo's git config for commit verification
-    configure_keys(user_key, key_type, repo)
-    git_bin = repo.git
-
-    # If there is no git repository at the local path, clone it.
-    if not os.path.exists(local_repo_path):
-        try:
-            git.Repo.clone_from(remote_repo_path, local_repo_path)
-        except git.CommandError as e:
-            print("Failed to clone repository: ", remote_repo_path, "Error:", e)
-
-    # Initialise interval and git.Repo object
-    last_checked = time.time() - fetch_interval # Eligible to search immediately on startup
-
-    # Loop forever, pulling changes from git. (Todo: Abstract to function fetch_config_git)
-    while True:
-        # If the interval has passed since the last check then fetch the latest head.
-        if last_checked + fetch_interval < time.time():
-            fetch_info = repo.remotes.origin.fetch()
-            for fetch in fetch_info:
-                print("Fetched from:", fetch.name)
-                print("Fetched commit:", fetch.commit)
-
-                # Assuming the branch you care about is 'master'
-                if 'origin/main' in fetch.name:
-                    local_commit = repo.heads.main.commit
-                    remote_commit = fetch.commit
-
-                    if local_commit.hexsha != remote_commit.hexsha:
-                        print("New commits are available on the remote master branch.")
-                        # You can list the new commits if necessary.
-
-                        # This will print the verification result for each commit.
-                        verification_output = ""
-                        try:
-                            verification_output = git_bin.verify_commit(remote_commit.hexsha)
-                            repo.remotes.origin.pull(remote_commit.hexsha)
-                            print("Commit was verified and pulled.", verification_output)
-                            os_rebuild()
-
-                        except git.GitCommandError as e:
-                            print(verification_output)
-                            print(e)
-                            print("Failed to verify commit:", remote_commit)
-                    else:
-                        print("Local master is up to date with the remote master.")
-                        try:
-                            verification_output = git_bin.verify_commit(repo.head.commit.hexsha)
-                            print(verification_output)
-                        except git.GitCommandError as e:
-                            print(e)
-                            print("Failed to verify commit:", repo.head.commit)
-        last_checked = time.time()
 
 
 def os_channel(update_or_rollback: bool):
