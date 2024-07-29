@@ -122,7 +122,9 @@ def calculate_metrics(cpu_usage_list, mem_usage_list):
             highest_cpu_usage = i
         total += i
 
-    avg_cpu_usage = total / len(cpu_usage_list)
+    avg_cpu_usage = 0
+    if (len(cpu_usage_list) > 0):
+        avg_cpu_usage = total / len(cpu_usage_list)
 
     total = 0
     highest_mem_usage = 0
@@ -131,7 +133,10 @@ def calculate_metrics(cpu_usage_list, mem_usage_list):
             highest_mem_usage = i
         total += i
 
-    avg_mem_usage = total / len(mem_usage_list)
+    avg_mem_usage = 0
+    if len(mem_usage_list) > 0:
+        avg_mem_usage = total / len(mem_usage_list)
+
     return avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage
 
 def configure_keys(user_key, use_ssh, repo):
