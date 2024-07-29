@@ -27,6 +27,8 @@ def status_send(studio_url, xnode_uuid, preshared_key, status: str):
         if not status_response.ok:
             print('Error sending status to dpl')
             print(status_response.content)
+        else:
+            print('Succesfully sent status to the dpl.')
     except requests.exceptions.RequestException as e:
         print(e)
 
@@ -59,10 +61,12 @@ def heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_us
     try:
         heartbeat_response = requests.post(studio_url + '/pushXnodeHeartbeat', headers=heartbeat_headers, json=heartbeat_message)
         if not heartbeat_response.ok:
+            print('Failed to send heartbeat, response code not OK: ')
             print(heartbeat_response.content)
         else:
             print("Succesfully sent heartbeat.")
     except requests.exceptions.RequestException as e:
+        print('Failed to send heartbeat, some kind of request exception occured: ')
         print(e)
 
 # Gets the configuration from the dpl, also checks hmac for integrity.
@@ -218,11 +222,11 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                     if not success:
                         print('Failed to push update.')
                     else:
-                        print('Updating machine...')
-                        status_send(studio_url, xnode_uuid, preshared_key, "updating")
-
                         wants_update = False
                         heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
+
+                        print('Updating machine...')
+                        status_send(studio_url, xnode_uuid, preshared_key, "updating")
 
                         # WARN: Might restart this program at this point!
                         if os_update():
