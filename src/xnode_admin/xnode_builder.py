@@ -6,7 +6,7 @@ import time
 import git
 import shutil
 import subprocess
-from xnode_admin.utils import calculate_metrics, parse_nix_primitive, parse_nix_json, configure_keys, generate_hmac
+from xnode_admin.utils import calculate_metrics, parse_nix_json, configure_keys, generate_hmac
 import base64
 
 
@@ -179,7 +179,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     hearbeat_interval = 30 # Heartbeat interval in seconds.
     generation_interval = 10 # API call to dpl to check if there's a new config or a new update.
     # XXX: Increase this interval to once every few hours, because it blocks for ~30 seconds in the best case.
-    update_check_interval = 110 # How often to check if there's an update on the current channel.
+    update_check_interval = 60 * 60 * 8 # How often to check if there's an update on the current channel.
     cpu_usage_list = []
     mem_usage_list = []
     preshared_key = base64.b64decode(access_token).hex()
