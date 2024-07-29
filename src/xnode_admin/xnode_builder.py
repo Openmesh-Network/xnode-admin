@@ -184,6 +184,12 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     update_check_timer = time.time() + update_check_interval
 
     wants_update = False
+
+    # Send initial heartbeat and status to notify dpl.
+    cpu_usage_list.append(psutil.cpu_percent())
+    mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
+    heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, False)
+
     status_send(studio_url, xnode_uuid, preshared_key, "online")
 
     print('Starting main loop.')
@@ -208,6 +214,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
                     print('Sending push update request to dpl.')
                     success = push_generation(studio_url, xnode_uuid, preshared_key, updateHave + 1, False)
+
                     if not success:
                         print('Failed to push update.')
                     else:
