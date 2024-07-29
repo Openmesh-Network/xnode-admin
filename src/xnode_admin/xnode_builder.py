@@ -214,16 +214,17 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         print('Updating machine...')
                         status_send(studio_url, xnode_uuid, preshared_key, "updating")
 
-                        os_update()
-                        print('Updated machine!')
+                        # Might restart service at this point!
                         wants_update = False
                         heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, wants_update)
 
-                        # Adding a tiny delay to make sure want_update is set to false on the frontend before online is set to true.
-                        # Otherwise the update banner will pop up for a brief second.
-                        time.sleep(.1)
-                        status_send(studio_url, xnode_uuid, preshared_key, "online")
+                        if os_update():
+                            print('Succesfully updated machine!')
+                        else:
+                            print('This should never run there might be an issue with the code!')
+                            print('Failed to apply update to machine.')
 
+                        status_send(studio_url, xnode_uuid, preshared_key, "online")
                 if configWant > configHave:
                     print('Config want and have don\'t match, must reconfigure.')
                     config = config_get(studio_url, xnode_uuid, preshared_key)
