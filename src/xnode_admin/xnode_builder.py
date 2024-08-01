@@ -95,7 +95,9 @@ def config_get(studio_url, xnode_uuid, preshared_key):
                     parsed_message = json.loads(message)
 
                     if parsed_message["expiry"] > time.time()*1000:
-                        parsed_config = parsed_message["xnode_config"]
+                        base64_config = parsed_message["xnode_config"]
+                        parsed_config = json.loads(base64.decodebytes(base64_config.encode('utf-8')))
+
                         return parsed_config
                     else:
                         print("Configuration expiry has passed.")
