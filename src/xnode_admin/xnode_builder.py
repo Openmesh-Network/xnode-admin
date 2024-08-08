@@ -193,7 +193,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     # Send initial heartbeat and status to notify dpl.
     cpu_usage_list.append(psutil.cpu_percent())
     mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
-    heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, False)
+
 
     # XXX: This might cause problems.
     successful_first_build = os_rebuild()
@@ -203,6 +203,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     else:
         print("First rebuild failed.")
 
+    heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, False)
     status_send(studio_url, xnode_uuid, preshared_key, "online")
 
     print('Starting main loop.')
@@ -359,15 +360,18 @@ def os_channel_rollback():
 
 def os_rebuild():
     print('Running rebuild')
-    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', 'switch', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--verbose', 'switch', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos'])
 
     if result.returncode == 0:
         print("Rebuilt succesfully, log:")
-        print(result.stdout)
         print(result.stderr)
 
         # Clean garbage:
-        result = subprocess.run(['/run/current-system/sw/bin/nix-store', '--gc'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("Running gc:")
+        result = subprocess.run(['/run/current-system/sw/bin/nix-store', '--gc'])
+        print("Done with gc.")
 
         return True
     else:
