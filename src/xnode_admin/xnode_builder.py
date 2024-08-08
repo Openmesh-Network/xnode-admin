@@ -196,7 +196,9 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
 
     # XXX: This might cause problems.
+    print('Initial rebuild...')
     successful_first_build = os_rebuild()
+    print('Done with initial rebuild')
 
     if successful_first_build:
         print("Rebuilt succesfully.")
