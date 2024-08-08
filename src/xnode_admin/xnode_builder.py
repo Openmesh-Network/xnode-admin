@@ -195,6 +195,14 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
     mem_usage_list.append(psutil.virtual_memory().used / (1024 * 1024))
     heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_usage_list, False)
 
+    # XXX: This might cause problems.
+    successful_first_build = os_rebuild()
+
+    if successful_first_build:
+        print("Rebuilt succesfully.")
+    else:
+        print("First rebuild failed.")
+
     status_send(studio_url, xnode_uuid, preshared_key, "online")
 
     print('Starting main loop.')
