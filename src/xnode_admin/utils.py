@@ -72,8 +72,8 @@ def parse_nix_json(json_nix):
             minecraft-server = {
                 eula = true;
                 declarative = true;
-            }
-        }
+            };
+        };
     """
     # If we are in a list (eg. services or options) parse each item recursively
     print(type(json_nix))
@@ -98,6 +98,7 @@ def parse_nix_json(json_nix):
         return ""
 
 def parse_nix_primitive(type, value): # Update for all optionTypes.txt  https://github.com/Openmesh-Network/NixScraper/blob/main/optionTypes.txt
+    value = str(value)
     if type == "int":
         return value
     elif type == "float":
@@ -138,28 +139,6 @@ def calculate_metrics(cpu_usage_list, mem_usage_list):
         avg_mem_usage = total / len(mem_usage_list)
 
     return avg_cpu_usage, avg_mem_usage, highest_cpu_usage, highest_mem_usage
-
-def configure_keys(user_key, use_ssh, repo):
-    # Configure the commit signing key for a git repo.
-    if user_key is not None:
-        if use_ssh:
-            try:
-                with repo.config_writer() as config:
-                    config.set_value("gpg", "format", "ssh")
-                    config.set_value('gpg "ssh"',"allowedSignersFile", user_key) # Path to 'keyfile' (similar to an authorized_hosts)
-                    config.release()
-            except git.GitCommandError:
-                print("Failed to set SSH key", git.GitCommandNotFound)
-        elif use_ssh is False:
-            try:
-                with repo.config_writer() as config: # To-do: Implement GPG
-                    config.set_value("gpg", "format", "")
-                    config.set_value("user","signingKey", user_key) # Hex of gpg public key
-                    config.release()
-            except git.GitCommandError:
-                print("Failed to set SSH key", git.GitCommandNotFound)
-        else: # When use_ssh is None
-            pass
 
 def generate_hmac(access_token, message):
     msg_hmac_hex = ""
