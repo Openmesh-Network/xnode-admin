@@ -5,7 +5,7 @@ import requests
 import time
 import shutil
 import subprocess
-from xnode_admin.utils import calculate_metrics, parse_nix_json, configure_keys, generate_hmac
+from xnode_admin.utils import calculate_metrics, parse_nix_json, generate_hmac
 import base64
 
 
