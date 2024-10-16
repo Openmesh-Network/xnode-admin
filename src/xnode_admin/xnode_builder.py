@@ -1,12 +1,15 @@
+import base64
 import json
-import os
 import psutil
 import requests
 import time
+import os
 import shutil
 import subprocess
+import tempfile
+from contextlib import contextmanager
+
 from xnode_admin.utils import calculate_metrics, parse_nix_json, generate_hmac
-import base64
 
 
 def status_send(studio_url, xnode_uuid, preshared_key, status: str):
@@ -67,6 +70,7 @@ def heartbeat_send(studio_url, xnode_uuid, preshared_key, cpu_usage_list, mem_us
     except requests.exceptions.RequestException as e:
         print('Failed to send heartbeat, some kind of request exception occured: ')
         print(e)
+
 
 # Gets the configuration from the dpl, also checks hmac for integrity.
 def config_get(studio_url, xnode_uuid, preshared_key):
@@ -197,7 +201,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
     # XXX: This might cause problems.
     print('Initial rebuild...')
-    successful_first_build = os_rebuild()
+    successful_first_build = os_rebuild(state_directory)
     print('Done with initial rebuild')
 
     if successful_first_build:
@@ -241,7 +245,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         status_send(studio_url, xnode_uuid, preshared_key, "updating")
 
                         # WARN: Might restart this program at this point!
-                        if os_update():
+                        if os_update(state_directory):
                             print('Succesfully updated machine!')
                         else:
                             print('This should never run there might be an issue with the code!')
@@ -260,7 +264,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
                         success = push_generation(studio_url, xnode_uuid, preshared_key, configHave + 1, True)
 
                         # WARN: This could restart the machine.
-                        rebuild_success = os_rebuild()
+                        rebuild_success = os_rebuild(state_directory)
 
                         if rebuild_success:
                             print("Configuration succeeded. Sending online status.")
@@ -291,7 +295,7 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
             print('Checking for updates...')
 
             status_send(studio_url, xnode_uuid, preshared_key, "checking updates")
-            if os_update_check():
+            if flake_update_check(state_directory):
                 print('Update found.')
 
                 # Heartbeat should now include wants update flag.
@@ -308,14 +312,33 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
         precision = 1 # (seconds) Increase to trade performance for metric precision.
         time.sleep(precision)
 
+
 def process_studio_config(studio_json_config, state_directory):
-    # 1 Get config path.
+    # 1 Add flake.nix
+    flake_file = state_directory+"/flake.nix"
+    with open(flake_file, "w") as f:
+        f.write('''
+            {
+                description = "XNode";
+
+                inputs = {
+                    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";
+                };
+
+                outputs = { self, nixpkgs, ... }@inputs:
+                    nixosConfigurations.xnode = nixpkgs.lib.nixosSystem {
+                        modules = [ ./config.nix ];
+                    };
+            }
+        ''')
+
+    # 2 Get config path.
     config_path = state_directory+"/config.nix"
 
     print('Studio json config:')
     print(studio_json_config)
 
-    # 2 Update config by constructing configuration from the new json
+    # 3 Update config by constructing configuration from the new json
     new_sys_config = "{ config, pkgs, ... }:\n{\n  "
     for module_config in studio_json_config:
         # config_type eg. services, users or networking
@@ -338,15 +361,9 @@ def process_studio_config(studio_json_config, state_directory):
         f.write(new_sys_config)
 
 
-def os_channel(update_or_rollback: bool):
+def flake_update(state_directory):
     # Update the channel.
-    argument = ""
-    if update_or_rollback:
-        argument = "--update"
-    else:
-        argument = "--rollback"
-
-    result = subprocess.run(['/run/current-system/sw/bin/nix-channel', argument], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(['/run/current-system/sw/bin/nix', 'flake', 'update', '--flake', state_directory], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print('Error when running channel command.')
         print(result.stderr)
@@ -354,17 +371,12 @@ def os_channel(update_or_rollback: bool):
     else:
         return True
 
-def os_channel_update():
-    return os_channel(True)
 
-def os_channel_rollback():
-    return os_channel(False)
-
-def os_rebuild():
+def os_rebuild(state_directory):
     print('Running rebuild')
 
 
-    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--verbose', 'switch', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos'])
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--verbose', 'switch', '--flake', state_directory+"#xnode"])
 
     if result.returncode == 0:
         print("Rebuilt succesfully, log:")
@@ -383,18 +395,47 @@ def os_rebuild():
         return False
 
 
-def os_update():
+def os_update(state_directory):
     print('Running update')
 
-    # Run channel update.
-    if not os_channel_update():
+    # Run flake update.
+    if not flake_update(state_directory):
         return False
 
     # Just nixos rebuild.
-    return os_rebuild()
+    return os_rebuild(state_directory)
 
-def os_update_check() -> bool:
-    print('Updating channel...')
+
+@contextmanager
+def backup_and_restore(file_path):
+    '''
+    Creates a backup copy of the file_path, gives that path to the user, and then restores the original copy
+    at the end of the operation.
+    '''
+    # Create a temporary file to store the backup
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        backup_path = temp_file.name
+        # Copy the original file to the temporary file
+        shutil.copy(file_path, backup_path)
+        print(f"Backup of {file_path} created at: {backup_path}")
+    
+    try:
+        # Yield the path to the backup file (if needed within the context)
+        yield backup_path
+    finally:
+        # After the context, restore the original file from the backup
+        print(f"Restoring {file_path} from backup...")
+        shutil.copy(backup_path, file_path)
+        print(f"{file_path} restored from backup.")
+        
+        # Optionally delete the temporary backup file
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+            print(f"Temporary backup file {backup_path} deleted.")
+
+
+def flake_update_check(state_directory) -> bool:
+    print('Updating flake inputs...')
 
     # Remove the /root/.cache/nix directory
     # Otherwise Nix will just cache the tar file and not redownload it!
@@ -406,41 +447,42 @@ def os_update_check() -> bool:
         print('Failed to delete directory. Error: ')
         print(e)
 
-    # Update the channel.
-    if not os_channel_update():
-        return False
+    # Path to the existing flake.lock file
+    flake_lock_path = state_directory + "/flake.lock"
 
-    # Run build.
-    print('Running build...')
-    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '-I', 'nixos-config=/etc/nixos/configuration.nix', '-I', 'nixpkgs=/root/.nix-defexpr/channels/nixos', 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
-        print('Error when running build command after channel update.')
-        print(result.stderr)
-        return False
+    # Backup and restore the flake.lock
+    with backup_and_restore(flake_lock_path) as old_flake_lock:
+        # Update the flake.
+        if not flake_update(state_directory):
+            return False
 
-    # Diff the build to see if there's a new version.
-    print('Diffing build...')
-    result = subprocess.run(['/run/current-system/sw/bin/nix', 'store', 'diff-closures', './result', '/run/current-system'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if result.returncode != 0:
-        print('Error when running diff command after build on update check.')
-        print(result.stderr)
+        # Run build.
+        print('Running build...')
+        result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--flake', state_directory+"#xnode", 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            print('Error when running build command after flake update.')
+            print(result.stderr)
+            return False
 
-    if len(result.stdout) > 0:
-        print('Difference between new and current version, must be an update!')
-        print('Changes: ')
-        print(result.stdout)
-        print('Changes in hex: ')
-        print(result.stdout.hex())
+        # Diff the system closure to see if there's a new version.
+        print('Diffing build...')
+        result = subprocess.run(['/run/current-system/sw/bin/nix', 'store', 'diff-closures', './result', '/run/current-system'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            print('Error when running diff command after build on update check.')
+            print(result.stderr)
 
-        # There is a diff, so there's an update available.
-        print('Rolling back changes in case the user wants to do a rebuild without updating.')
-        os_channel_rollback()
+        if len(result.stdout) > 0:
+            print('Difference between new and current version, must be an update!')
+            print('Changes: ')
+            print(result.stdout)
+            print('Changes in hex: ')
+            print(result.stdout.hex())
 
-        return True
-    else:
-        print('No difference between \"updated\" and current version')
-        print(result.stdout)
+            return True
+        else:
+            print('No difference between \"updated\" and current version')
+            print(result.stdout)
 
-        # No diff, therefore there isn't an update available
-        return False
+            # No diff, therefore there isn't an update available
+            return False
 
