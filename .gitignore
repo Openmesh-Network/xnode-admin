@@ -7,3 +7,5 @@ config.nix
 latest_config.json
 example-procmdline
 *.cpython*
+
+result
