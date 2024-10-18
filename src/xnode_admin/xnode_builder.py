@@ -318,18 +318,20 @@ def process_studio_config(studio_json_config, state_directory):
     flake_file = state_directory+"/flake.nix"
     with open(flake_file, "w") as f:
         f.write('''
-            {
-                description = "XNode";
+{
+    description = "Xnode";
 
-                inputs = {
-                    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";
-                };
+    inputs = {
+        nixpkgs.url = "github:Openmesh-Network/Xnodepkgs";
+    };
 
-                outputs = { self, nixpkgs, ... }@inputs:
-                    nixosConfigurations.xnode = nixpkgs.lib.nixosSystem {
-                        modules = [ ./config.nix ];
-                    };
-            }
+    outputs = inputs@{ self, nixpkgs, ... }: {
+        nixosConfigurations.xnode = nixpkgs.lib.nixosSystem {
+            system = "x86_64-linux";
+            modules = [ /etc/nixos/configuration.nix ./config.nix ];
+        };
+    };
+}
         ''')
 
     # 2 Get config path.
@@ -363,7 +365,7 @@ def process_studio_config(studio_json_config, state_directory):
 
 def flake_update(state_directory):
     # Update the channel.
-    result = subprocess.run(['/run/current-system/sw/bin/nix', 'flake', 'update', '--flake', state_directory], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(['/run/current-system/sw/bin/nix', 'flake', 'update', state_directory, '--impure'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print('Error when running channel command.')
         print(result.stderr)
@@ -376,7 +378,7 @@ def os_rebuild(state_directory):
     print('Running rebuild')
 
 
-    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--verbose', 'switch', '--flake', state_directory+"#xnode"])
+    result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--verbose', 'switch', '--flake', state_directory+"#xnode", '--impure'])
 
     if result.returncode == 0:
         print("Rebuilt succesfully, log:")
@@ -458,7 +460,7 @@ def flake_update_check(state_directory) -> bool:
 
         # Run build.
         print('Running build...')
-        result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--flake', state_directory+"#xnode", 'build'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(['/run/current-system/sw/bin/nixos-rebuild', '--flake', state_directory+"#xnode", 'build', '--impure'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode != 0:
             print('Error when running build command after flake update.')
             print(result.stderr)
