@@ -314,16 +314,30 @@ def fetch_config_studio(studio_url, xnode_uuid, access_token, state_directory):
 
 
 def process_studio_config(studio_json_config, state_directory):
-    # 1 Add flake.nix
+    # 1 Get files paths.
     flake_file = state_directory+"/flake.nix"
-    with open(flake_file, "w") as f:
-        f.write('''
-{
+    config_path = state_directory+"/config.nix"
+
+    print('Studio json config:')
+    print(studio_json_config)
+
+    # 2 Extract flakes from the new configuration
+    flakes = set() # Remove duplicates, the config will still fail if there are items with the same name, but different urls
+    for submodule in studio_json_config["services"]:
+            if "flakes" in submodule.keys():
+                for flake in submodule["flakes"]:
+                    flakes.add(tuple([flake["name"], flake["url"]]))
+
+    # 3 Update configs by constructing configuration from the new json
+    flakes_config = '''{
     description = "Xnode";
 
     inputs = {
         nixpkgs.url = "github:Openmesh-Network/Xnodepkgs";
-    };
+'''
+    for (name, url) in flakes:
+        flakes_config += "      {name}.url = \"{url}\";\n".format(name=name, url=url)
+    flakes_config += '''    };
 
     outputs = inputs@{ self, nixpkgs, ... }: {
         nixosConfigurations.xnode = nixpkgs.lib.nixosSystem {
@@ -331,17 +345,15 @@ def process_studio_config(studio_json_config, state_directory):
             modules = [ /etc/nixos/configuration.nix ./config.nix ];
         };
     };
-}
-        ''')
+}'''
 
-    # 2 Get config path.
-    config_path = state_directory+"/config.nix"
+    new_sys_config = "{ config, pkgs, inputs, ... }:\n{\n  "
+    if len(flakes) > 0:
+        new_sys_config += "imports = [ "
+        for (name, url) in flakes:
+            new_sys_config += "inputs.{name}.nixosModules.default ".format(name=name)
+        new_sys_config += "];\n"
 
-    print('Studio json config:')
-    print(studio_json_config)
-
-    # 3 Update config by constructing configuration from the new json
-    new_sys_config = "{ config, pkgs, ... }:\n{\n  "
     for module_config in studio_json_config:
         # config_type eg. services, users or networking
         print(studio_json_config[module_config]) # services
@@ -356,9 +368,12 @@ def process_studio_config(studio_json_config, state_directory):
 
         new_sys_config += "};\n"
     new_sys_config += "\n}"
+    print(flakes_config)
     print(new_sys_config)
 
     # 3 Write the new config to the .nix file
+    with open(flake_file, "w") as f:
+        f.write(flakes_config)
     with open(config_path, "w") as f:
         f.write(new_sys_config)
 
