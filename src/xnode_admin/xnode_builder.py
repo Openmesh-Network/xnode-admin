@@ -343,7 +343,7 @@ def process_studio_config(studio_json_config, state_directory):
         nixosConfigurations.xnode = nixpkgs.lib.nixosSystem {
             system = "x86_64-linux";
             specialArgs = { inherit inputs; };
-            modules = [ /etc/nixos/configuration.nix ./config.nix ];
+            modules = [ /etc/nixos/configuration.nix ];
         };
     };
 }'''
